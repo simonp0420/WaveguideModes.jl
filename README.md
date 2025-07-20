@@ -1,3 +1,4 @@
+[![CI](https://github.com/simonp0420/WaveguideModes.jl/actions/workflows/CI.yml/badge.svg)](https://github.com/simonp0420/WaveguideModes.jl/actions/workflows/CI.yml)
 # WaveguideModes
 
 Contains useful data structures and utilty programs for microwave engineers who work with metallic waveguides.  This 
