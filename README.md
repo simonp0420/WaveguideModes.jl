@@ -13,3 +13,7 @@ a "waveguide spec" (a standard (EIA, RCSC, or IEC) abbreviation for a rectangula
 `"WR650"` (EIA), `"WG7"` (RCSC), and `"R22"` (IEC). 
 
 Here is a short video showing the use of the `rwg_modetable` function:
+
+
+https://github.com/user-attachments/assets/e4fe63cc-c65f-4063-a304-27fe43542c95
+
