@@ -16,5 +16,8 @@ a "waveguide spec" (a standard (EIA, RCSC, or IEC) abbreviation for a rectangula
 Here is a short video showing the use of the `rwg_modetable` function:
 
 
-https://github.com/user-attachments/assets/e4fe63cc-c65f-4063-a304-27fe43542c95
+
+
+
+https://github.com/user-attachments/assets/c3a397bc-b525-454c-bd0f-8522e619de25
 
