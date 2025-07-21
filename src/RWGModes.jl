@@ -602,13 +602,26 @@ function rwg_modetable(
     freq_unit = Unitful.unit(f)
 
     modedata = rwg_modes(a, b, f; nmodes, ϵᵣ, tanδ, σ, Rq)
+
     title = wgname * ": a = $a, b = $b, f = $f"
-    subtitle = ""
-    !isinf(σ) && (subtitle *= "σ = $σ")
-    !iszero(Rq) && (subtitle *= ", Rq = $Rq")
-    !isone(ϵᵣ) && (subtitle *= ", ϵᵣ = $ϵᵣ")
-    !iszero(tanδ) && (subtitle *= ", tanδ = $tanδ")
-    isempty(subtitle) || (title = string(title, "\n", subtitle))
+    !isinf(σ) && (title *= ", σ = $σ")
+    !iszero(Rq) && (title *= ", Rq = $Rq")
+    !isone(ϵᵣ) && (title *= ", ϵᵣ = $ϵᵣ")
+    !iszero(tanδ) && (title *= ", tanδ = $tanδ")
+    maxtitlelen = 60
+    linebreak = is_html_environment() ? "<br>\n" : "\n"
+    linelen = 0
+    title2 = ""
+    for phrase in eachsplit(title, ',')
+        if linelen + length(phrase) > maxtitlelen
+            title2 = string(title2, linebreak)
+            linelen = 0
+        end
+        linelen += length(phrase)
+        title2 *= string(phrase, ",")
+    end
+    title = title2[begin:end-1]
+
     column_labels = ["Type", "m", "n", "Cutoff Freq.", "Guide Wavelength", "Attenuation"]
     column_units = ["", "", "", "[$freq_unit]", "[$length_unit]", "[dB/$length_unit]"]
     header = (column_labels, column_units)
