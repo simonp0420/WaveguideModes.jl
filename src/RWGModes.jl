@@ -409,12 +409,13 @@ function rwg_modes(
     modedata = Matrix{Any}(undef, nmodes, 6)
 
     np2dB = 20 * log10(exp(1)) # Convert neper to dB
+    cover2π = c₀ / (sqrt(ϵᵣ) * 2π)
     for (i, mode) in pairs(wg.modes)
         λgm = 2π / imag(mode.γ)
         λg = Unitful.ustrip(length_unit, λgm * u"m")
         dBpm = np2dB * real(mode.γ)  # [dB/m]
         dBplu = Unitful.ustrip(length_unit^-1, dBpm * u"m^-1") # [dB/length_unit]
-        fcohz = mode.kco * (c₀ / 2π)
+        fcohz = mode.kco * cover2π
         fco = Unitful.ustrip(freq_unit, fcohz * u"Hz")
         modedata[i, :] .= (string(mode.p), mode.m, mode.n, fco, λg, dBplu)
     end
