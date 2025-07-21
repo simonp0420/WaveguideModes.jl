@@ -18,6 +18,5 @@ Here is a short video showing the use of the `rwg_modetable` function:
 
 
 
-
-https://github.com/user-attachments/assets/c3a397bc-b525-454c-bd0f-8522e619de25
+https://github.com/user-attachments/assets/f59602ac-3497-4d69-953c-eaff624073a7
 
