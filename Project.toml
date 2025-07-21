@@ -1,7 +1,7 @@
 name = "WaveguideModes"
 uuid = "4195bfc8-baed-4655-b3ea-4cd766faaf06"
 authors = ["Peter Simon <psimon0420@gmail.com> and contributors"]
-version = "1.0.0-DEV"
+version = "0.1.0"
 
 [deps]
 AbstractPlutoDingetjes = "6e696c72-6542-2067-7265-42206c756150"
