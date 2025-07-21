@@ -525,7 +525,7 @@ function lookup_rwg(wgspec::AbstractString)
 end
 
 """
-rwg_modetable(wgspec, frequency; kwargs...)
+    rwg_modetable(wgspec, frequency; kwargs...)
 
 Pretty-print a table of rectangular waveguide mode properties: cutoff frequency, guide wavelength, and attenuation constant.
 
@@ -571,7 +571,7 @@ function rwg_modetable(
 end
 
 """
-rwg_modetable(a, b, frequency; kwargs...)
+    rwg_modetable(a, b, frequency; kwargs...)
 
 An alternative method for `rwg_modetable` allowing explicit specification of the waveguide dimensions.
 Here, instead of `wgspec`, the first two arguments are the x and y dimensions of the waveguide, expressed
