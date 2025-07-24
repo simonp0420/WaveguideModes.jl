@@ -39,7 +39,7 @@ Convenient keyword-argument constructor that defaults the frequency-dependent fi
 RWGMode(; p, m, n, a, b, f=0, γ=0, Z=0) = RWGMode(p, m, n, π * hypot(m/a, n/b), f, γ, Z)
 
 """
-    RWG <: HomogeneousMetalPipeMode
+    RWG <: HomogeneousMetallicWaveguide
 
 A struct representing a section of metallic, rectangular waveguide, uniformly filled with dielectric.
 It is assumed that the (possibly non-smooth) metal walls are either perfectly conducting or form a 
@@ -60,7 +60,7 @@ literature are used. See the docstring for function `rwgte10gz` for more informa
 
 Both positional and keyword argument constructors for `RWG` are available.
 """
-@kwdef struct RWG <: HomogeneousMetalPipeMode
+@kwdef struct RWG <: HomogeneousMetallicWaveguide
     a::Float64  # x dimension [meter]
     b::Float64  # y dimension [meter]
     l::Float64 = 0.0  # Length [meter]
@@ -328,6 +328,9 @@ end
 
 Compute cutoff frequency, guide wavelength, and attenuation constant for first few modes of a rectangular waveguide.
 
+Note: This function is intended for programmatic use.  For interactive use, see `rwg_modetable`.  
+
+
 ## Required Positional Arguments
 - `a`, `b`: The waveguide inner dimensions as any `Unitful` length quantity, e.g. `b=0.8128u"cm"`, `b=320u"mil"`, 
   or `b=0.320u"inch"`.  `a` and `b` must be expressed in the same length units.
@@ -344,15 +347,14 @@ Compute cutoff frequency, guide wavelength, and attenuation constant for first f
   conductivity via the [`MetalSurfaceImpedance`](https://github.com/simonp0420/MetalSurfaceImpedance.jl) package.
 
 ## Return Value
-- `modedata::Matrix{Any}`: A matrix of size `(nprop, 6)` where `nprop ≤ nmodes` is the
-  number of propagating modes found, containing in each row `[p, m, n, fco, λg, α]` for a single propagating 
-  mode. Here `p = "TE"` for a TE mode or `"TM"` for a TM mode, `m` and `n` are integer mode indices in the
-  x and y directions, resp., `fco` is the cutoff frequency expressed in the same units as input argument 
-  `f` (but without attached units), `λg` is the guide wavelength expressed in the same units as `a` and
-  `b` (but without attached units), and `α` is the mode attenuation constant in units of dB/length_unit 
-  (without attached unit), where length_unit is the same as that of inputs `a` and `b`. The modes are 
-  listed in order of increasing cutoff frequency. For cutoff modes (other than TE10 or TE01 which are
-  calculated more accurately) the value of `λg` will be `Inf`.
+- `modedata::Matrix{Any}`: A matrix of size `(nmodes, 6)`, containing in each row `[p, m, n, fco, λg, α]`
+  for a single mode. Here `p = "TE"` for a TE mode or `"TM"` for a TM mode, `m` and `n` are integer mode
+  indices in the x and y directions, resp., `fco` is the cutoff frequency expressed in the same units as
+  input argument `f` (but without attached units), `λg` is the guide wavelength expressed in the same 
+  units as `a` and `b` (but without attached units), and `α` is the mode attenuation constant in units 
+  of dB/unitlength (without attached units), where unitlength is one unit of length in the same units 
+  as `a` and `b`. The modes are listed in order of increasing cutoff frequency. For cutoff modes (other
+  than TE10 or TE01 which are calculated more accurately) the value of `λg` will be `Inf`.
 """
 function rwg_modes(
     a::Unitful.Quantity{<:Real, Unitful.dimension(u"m")},
@@ -536,7 +538,7 @@ in the paper: "Analytical waveguide model precisely predicting loss and delay in
 perturbational formulas are used in conjunction with the Gradient method to determine effective surface impedance.  
 For cutoff modes (other than TE₁₀ and TE₀₁) the value of guide wavelength will be printed out as `Inf`.
 
-Note:This function is intended for interactive use.  For programmatic use, see `rwg_modes`.  
+Note: This function is intended for interactive use.  For programmatic use, see `rwg_modes`.  
 The table is printed to the user's console using the `PrettyTables` package.  
 
 ## Required Positional Arguments
@@ -587,7 +589,7 @@ function rwg_modetable(
     ϵᵣ::Real = 1.0,
     epsr::Real=1.0, 
     tanδ::Real = 0.0,
-    tand::Real=0.0, 
+    tandel::Real=0.0, 
     σ::Unitful.Quantity{<:Real, Unitful.dimension(u"S/m")} = Inf*u"S/m",
     sigma::Unitful.Quantity{<:Real, Unitful.dimension(u"S/m")} = Inf*u"S/m",
     Rq::Unitful.Quantity{<:Real, Unitful.dimension(u"m")} = 0.0u"m",
@@ -596,7 +598,7 @@ function rwg_modetable(
     )
     
     ϵᵣ = max(ϵᵣ, epsr)
-    tanδ = max(tanδ, tand)
+    tanδ = max(tanδ, tandel)
     σ = min(σ, sigma)
 
     length_unit = Unitful.unit(a)

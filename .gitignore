@@ -2,3 +2,7 @@
 .vscode/settings.json
 /sandbox/
 test/Manifest.toml
+src/RWGModes.jl
+docs/Manifest.toml
+docs/build*
+docs/src/*.md

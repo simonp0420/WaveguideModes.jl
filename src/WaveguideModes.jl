@@ -17,6 +17,11 @@ const ϵ₀ = Unitful.ustrip(Float64, u"F/m", PhysicalConstants.CODATA2022.ε_0)
 const μ₀ = Unitful.ustrip(Float64, u"H/m", PhysicalConstants.CODATA2022.μ_0)
 const η₀ = Unitful.ustrip(Float64, u"Ω", PhysicalConstants.CODATA2022.Z_0)
 
+abstract type Waveguide end
+abstract type MetallicWaveguide <: Waveguide end
+abstract type HomogeneousMetallicWaveguide <: MetallicWaveguide end
+
+
 
 """
     abstract type Mode end
@@ -34,7 +39,7 @@ Electromagnetic mode supported by metal pipes, possibly filled with inhomogeneou
 abstract type MetalPipeMode <: Mode end
 
 """
-    abstract type HomogeneousMetalPipeMode <: Mode end
+    abstract type HomogeneousMetalPipeMode <: MetalPipeMode end
 
 Electromagnetic mode supported by homogeneously filled metal pipes.  Concrete subtypes should contain
 at least the following fields:
@@ -51,9 +56,9 @@ isTE(mode::HomogeneousMetalPipeMode) = mode.p == TE
 isTM(mode::HomogeneousMetalPipeMode) = mode.p == TM
 
 """
-    UpdateMode(mode::HomogeneousMetalPipeMode; f::Real, γ::Complex, Z::Complex) -> mode
+    update(mode::HomogeneousMetalPipeMode; f::Real, γ::Complex, Z::Complex) -> mode
 
-Update the frequency-dependent fields of a `HomogeneousMetalPipeMode` and return the modified mode.
+Create a copy of an existing mode with updated frequency-dependent fields and return the updated mode.
 """
 function update(mode::HomogeneousMetalPipeMode; f::Real, γ::Complex, Z::Complex)
     @reset mode.f = f
