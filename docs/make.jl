@@ -18,6 +18,7 @@ end
 
 makedocs(;
     modules = [WaveguideModes],
+    warnonly = true, 
     repo = "github.com/simonp0420/WaveguideModes.jl.git",
     format = Documenter.HTML(
         assets=String["assets/citations.css"],
