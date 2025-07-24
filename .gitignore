@@ -6,3 +6,4 @@ src/RWGModes.jl
 docs/Manifest.toml
 docs/build*
 docs/src/*.md
+!docs/src/references.md
