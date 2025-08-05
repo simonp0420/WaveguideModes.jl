@@ -4,12 +4,12 @@ using Unitful: Unitful, @u_str
 using MetalSurfaceImpedance: Zsurface, effective_conductivity
 using Printf: @printf
 using Accessors: @set, @reset
-using PrettyTables: pretty_table, ft_printf, tf_unicode_rounded, tf_html_default, HtmlTableFormat
+using PrettyTables: pretty_table, ft_printf, tf_unicode_rounded, tf_html_default,
+                    HtmlTableFormat
 using AbstractPlutoDingetjes: is_inside_pluto
 
 export @u_str
 export RWG, RWGMode, TE, TM, lookup_rwg, rwgte10gz, rwg_modes, rwg_modetable
-
 
 using PhysicalConstants: PhysicalConstants
 const c₀ = Unitful.ustrip(Float64, u"m/s", PhysicalConstants.CODATA2022.c_0)
@@ -20,8 +20,6 @@ const η₀ = Unitful.ustrip(Float64, u"Ω", PhysicalConstants.CODATA2022.Z_0)
 abstract type Waveguide end
 abstract type MetallicWaveguide <: Waveguide end
 abstract type HomogeneousMetallicWaveguide <: MetallicWaveguide end
-
-
 
 """
     abstract type Mode end
@@ -64,9 +62,8 @@ function update(mode::HomogeneousMetalPipeMode; f::Real, γ::Complex, Z::Complex
     @reset mode.f = f
     @reset mode.γ = γ
     @reset mode.Z = Z
-    return mode 
+    return mode
 end
-
 
 """
     mysqrt(x)
@@ -80,7 +77,6 @@ function mysqrt(z::Complex)
     return iszero(real(ans)) && imag(ans) < 0 ? -ans : ans
 end
 
-
 """
     is_html_environment()
 
@@ -89,7 +85,6 @@ Returns `true` if code is running under `IJulia` or `Pluto`, and `false` otherwi
 function is_html_environment()
     return (isdefined(Main, :IJulia) && Main.IJulia.inited) || is_inside_pluto()
 end
-
 
 include("RWGModes.jl")
 

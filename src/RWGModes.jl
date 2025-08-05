@@ -21,9 +21,11 @@ struct RWGMode <: HomogeneousMetalPipeMode
     γ::ComplexF64 # Attenuation constant [np/meter]
     Z::ComplexF64 # Wave impedance normalized to η₀ [unitless]
 
-    function RWGMode(p::TETM, m::Integer, n::Integer, kco::Real, f::Real, γ::Number, Z::Number)
+    function RWGMode(
+            p::TETM, m::Integer, n::Integer, kco::Real, f::Real, γ::Number, Z::Number)
         if p == TE
-            (m ≥ 0 && n ≥ 0 && (m,n) ≠ (0,0)) || throw(ArgumentError("Illegal (m,n) = $((m,n)) for TE mode"))
+            (m ≥ 0 && n ≥ 0 && (m, n) ≠ (0, 0)) ||
+                throw(ArgumentError("Illegal (m,n) = $((m,n)) for TE mode"))
         else
             (m > 0 && n > 0) || throw(ArgumentError("Illegal (m,n) = $((m,n)) for TM mode"))
         end
@@ -36,7 +38,8 @@ end
 
 Convenient keyword-argument constructor that defaults the frequency-dependent fields to zero and uses waveguide dimensions in meters.
 """
-RWGMode(; p, m, n, a, b, f=0, γ=0, Z=0) = RWGMode(p, m, n, π * hypot(m/a, n/b), f, γ, Z)
+RWGMode(; p, m, n, a, b, f = 0, γ = 0, Z = 0) = RWGMode(
+    p, m, n, π * hypot(m / a, n / b), f, γ, Z)
 
 """
     RWG <: HomogeneousMetallicWaveguide
@@ -65,8 +68,8 @@ Both positional and keyword argument constructors for `RWG` are available.
     b::Float64  # y dimension [meter]
     l::Float64 = 0.0  # Length [meter]
     ϵᵣ::Float64 = 1.0    # Relative permittivity of dielectric filling waveguide
-    tanδ::Float64  = 0.0 # Loss tangent of dielectric filling waveguide
-    σ::Float64  = Inf # Wall bulk conductivity [S/m]
+    tanδ::Float64 = 0.0 # Loss tangent of dielectric filling waveguide
+    σ::Float64 = Inf # Wall bulk conductivity [S/m]
     Rq::Float64 = 0.0 # Wall RMS surface roughness [m]
     modes::Vector{RWGMode} = RWGMode[]
 end
@@ -95,7 +98,7 @@ function RWG(wgspec::AbstractString; kwargs...)
     (a, b) = lookup_rwg(wgspec)
     am = Unitful.ustrip(u"m", a)
     bm = Unitful.ustrip(u"m", b)
-    return RWG(; a=am, b=bm, kwargs...)
+    return RWG(; a = am, b = bm, kwargs...)
 end
 
 """
@@ -111,24 +114,27 @@ Set up the modes for a uniform rectangular waveguide.
 - `nmodes`: (optional) The number of modes to append to `wg.modes` if it is empty.  If `wg.modes` is nonempty, then
   `nmodes` must be equal to `length(wg.modes)`.
 """
-function setup_modes!(wg::RWG, f::Real, nmodes::Integer=length(wg.modes))
+function setup_modes!(wg::RWG, f::Real, nmodes::Integer = length(wg.modes))
     (; a, b, σ, Rq, ϵᵣ, tanδ) = wg
-    if isempty(wg.modes) 
+    if isempty(wg.modes)
         nmodes ≤ 0 && throw(ArgumentError("nmodes must be > 0"))
         rlattice = 4 * sqrt(nmodes / (a * b * π))
         mmax = ceil(Int, rlattice * a)
         nmax = ceil(Int, rlattice * b)
-        modes = [RWGMode(; p, m, n, a, b) for  p in (TE,TM), m in 0:mmax, n in 0:nmax if 
-                        (p == TE && (m,n) ≠ (0,0)) || (p == TM && m > 0 && n > 0)]
+        modes = [RWGMode(; p, m, n, a, b)
+                 for p in (TE, TM), m in 0:mmax, n in 0:nmax
+                 if
+                 (p == TE && (m, n) ≠ (0, 0)) || (p == TM && m > 0 && n > 0)]
         sort!(modes; by = x -> x.kco)
-        deleteat!(modes, nmodes+1:length(modes))  
+        deleteat!(modes, (nmodes + 1):length(modes))
         append!(wg.modes, modes)
     else
-        nmodes == length(wg.modes) || throw(ArgumentError("nmodes not equal to number of existing modes in c"))
+        nmodes == length(wg.modes) ||
+            throw(ArgumentError("nmodes not equal to number of existing modes in c"))
     end
 
     k₀ = 2π * f / c₀ # free-space wavenumber [rad/m]
-    rootϵ = mysqrt(ϵᵣ * complex(1.0, -tanδ)) 
+    rootϵ = mysqrt(ϵᵣ * complex(1.0, -tanδ))
     k = k₀ * rootϵ # wavenumber in dielectric
     k² = k^2
     ηnorm = inv(rootϵ) # η/η₀
@@ -148,14 +154,17 @@ function setup_modes!(wg::RWG, f::Real, nmodes::Integer=length(wg.modes))
         else
             ϵ₀ₙ = iszero(n) ? 1 : 2
             γ = mysqrt(kco^2 - k²)
-            ratio = (kco / k)^2 |> real
+            ratio = real((kco / k)^2)
             if !iszero(Rs) && (ratio < 1) # Add attenuation due to metal loss to propagating modes
                 boa = b / a
-                α = 2 * real(Rs / η) / (wg.b * sqrt(1 - ratio))  
+                α = 2 * real(Rs / η) / (wg.b * sqrt(1 - ratio))
                 m²b² = (m * b)^2
                 n²a² = (n * a)^2
                 if isTE(mode)
-                    α *= ((1 + boa) * ratio + boa * (ϵ₀ₙ/2 - ratio) * (m²b² / boa + n²a²) / (m²b² + n²a²))
+                    α *= (
+                        (1 + boa) * ratio +
+                        boa * (ϵ₀ₙ / 2 - ratio) * (m²b² / boa + n²a²) / (m²b² + n²a²)
+                    )
                 else
                     n²a³ = n²a² * a
                     α *= (m²b² * b + n²a³) / (m²b² * a + n²a³)
@@ -166,14 +175,13 @@ function setup_modes!(wg::RWG, f::Real, nmodes::Integer=length(wg.modes))
             if p == TE
                 Z = k / β * ηnorm
             else
-               Z = β / k * ηnorm
+                Z = β / k * ηnorm
             end
         end
         wg.modes[q] = update(mode; f, γ, Z)
     end
     return wg
 end
-
 
 """
     rwgte10gz(a, b, f; ϵᵣ, tanδ, σ, Rq) -> (γ, Z)
@@ -206,19 +214,17 @@ Accurately compute γ and Z (prop. constant and wave impedance) of TE10 mode in 
   Integrity (SPI), pp. 1-4. IEEE, 2017.
 """
 function rwgte10gz(
-    a::Unitful.Quantity{<:Real, Unitful.dimension(u"m")},
-    b::Unitful.Quantity{<:Real, Unitful.dimension(u"m")},
-    f::Unitful.Quantity{<:Real, Unitful.dimension(u"Hz")} 
-    ;
-    ϵᵣ::Real = 1.0,
-    tanδ::Real = 0.0,
-    σ::Unitful.Quantity{<:Real, Unitful.dimension(u"S/m")} = Inf*u"S/m",
-    Rq::Unitful.Quantity{<:Real, Unitful.dimension(u"m")} = 0.0u"m")
-
+        a::Unitful.Quantity{<:Real, Unitful.dimension(u"m")},
+        b::Unitful.Quantity{<:Real, Unitful.dimension(u"m")},
+        f::Unitful.Quantity{<:Real, Unitful.dimension(u"Hz")};
+        ϵᵣ::Real = 1.0,
+        tanδ::Real = 0.0,
+        σ::Unitful.Quantity{<:Real, Unitful.dimension(u"S/m")} = Inf * u"S/m",
+        Rq::Unitful.Quantity{<:Real, Unitful.dimension(u"m")} = 0.0u"m")
     am, bm, Rqm = map(x -> Unitful.ustrip(u"m", x), (a, b, Rq))
     fhz = Unitful.ustrip(u"Hz", f)
     σspm = Unitful.ustrip(u"S/m", σ)
-    return rwgte10gz(am, bm, fhz; ϵᵣ, tanδ, σ=σspm, Rq=Rqm)
+    return rwgte10gz(am, bm, fhz; ϵᵣ, tanδ, σ = σspm, Rq = Rqm)
 end
 
 """
@@ -243,14 +249,10 @@ This method accepts a rectangular waveguide "specification string" instead of a 
 - `Z`: Complex wave impedance [Ω]
 """
 function rwgte10gz(
-    wgspec::AbstractString,
-    f::Unitful.Quantity{<:Real, Unitful.dimension(u"Hz")}
-    ; kwargs...)
-
+        wgspec::AbstractString, f::Unitful.Quantity{<:Real, Unitful.dimension(u"Hz")}; kwargs...)
     (a, b) = lookup_rwg(wgspec)
     return rwgte10gz(a, b, f; kwargs...)
 end
-
 
 """
     rwgte10gz(a::Real, b::Real, f::Real; ϵᵣ::Real=1.0, tanδ::Real=0.0, σ::Real=Inf, Rq::Real=0.0) -> (γ, Z)
@@ -272,29 +274,28 @@ The tuple `(γ, Z)` where:
 - `Z`: Complex wave impedance [Ω]
 """
 function rwgte10gz(
-    a::Real,
-    b::Real,
-    f::Real
-    ;
-    ϵᵣ::Real = 1.0,
-    epsr::Real = 1.0,
-    tanδ::Real = 0.0,
-    tandel::Real = 0.0,
-    σ::Real = Inf,
-    sigma::Real = Inf,
-    Rq::Real = 0.0)
-
+        a::Real,
+        b::Real,
+        f::Real;
+        ϵᵣ::Real = 1.0,
+        epsr::Real = 1.0,
+        tanδ::Real = 0.0,
+        tandel::Real = 0.0,
+        σ::Real = Inf,
+        sigma::Real = Inf,
+        Rq::Real = 0.0)
     ϵᵣ = max(ϵᵣ, epsr)
     tanδ = max(tanδ, tandel)
     σ = min(σ, sigma)
 
-    isinf(σ) && !iszero(Rq) && throw(ArgumentError("Rq must be zero for infinite conductivity"))
+    isinf(σ) &&
+        !iszero(Rq) &&
+        throw(ArgumentError("Rq must be zero for infinite conductivity"))
 
     w, h = a, b # Use nomenclature from the reference
     ω = 2π * f
     Zs = Zsurface(f, σ, Rq)
     σeff = effective_conductivity(f, σ, Rq)
-
 
     Lₒ′ = μ₀ # Eq. (14) of [3]
     C′ = ϵ₀ * ϵᵣ  # Eq. (15) of [3]
@@ -317,7 +318,7 @@ function rwgte10gz(
 
     # Eqs. (12) and (13) of [1]:
     Zckt = complex(R′, ω * L′)
-    Yckt = inv(complex(R′′, ω * L′′)) + complex(G′, ω * C′) 
+    Yckt = inv(complex(R′′, ω * L′′)) + complex(G′, ω * C′)
     γ = mysqrt(Zckt * Yckt)
     Z = sqrt(Zckt / Yckt)
     return (γ, Z)
@@ -357,20 +358,17 @@ Note: This function is intended for programmatic use.  For interactive use, see 
   than TE10 or TE01 which are calculated more accurately) the value of `λg` will be `Inf`.
 """
 function rwg_modes(
-    a::Unitful.Quantity{<:Real, Unitful.dimension(u"m")},
-    b::Unitful.Quantity{<:Real, Unitful.dimension(u"m")},
-    f::Unitful.Quantity{<:Real, Unitful.dimension(u"Hz")} 
-    ;
-    nmodes::Int = 10,
-    ϵᵣ::Real = 1.0,
-    epsr::Real = 1.0,
-    tanδ::Real = 0.0,
-    tandel::Real = 0.0,
-    σ::Unitful.Quantity{<:Real, Unitful.dimension(u"S/m")} = Inf*u"S/m",
-    sigma::Unitful.Quantity{<:Real, Unitful.dimension(u"S/m")} = Inf*u"S/m",
-    Rq::Unitful.Quantity{<:Real, Unitful.dimension(u"m")} = 0.0u"m",
-    ) 
-
+        a::Unitful.Quantity{<:Real, Unitful.dimension(u"m")},
+        b::Unitful.Quantity{<:Real, Unitful.dimension(u"m")},
+        f::Unitful.Quantity{<:Real, Unitful.dimension(u"Hz")};
+        nmodes::Int = 10,
+        ϵᵣ::Real = 1.0,
+        epsr::Real = 1.0,
+        tanδ::Real = 0.0,
+        tandel::Real = 0.0,
+        σ::Unitful.Quantity{<:Real, Unitful.dimension(u"S/m")} = Inf * u"S/m",
+        sigma::Unitful.Quantity{<:Real, Unitful.dimension(u"S/m")} = Inf * u"S/m",
+        Rq::Unitful.Quantity{<:Real, Unitful.dimension(u"m")} = 0.0u"m")
     ϵᵣ = max(ϵᵣ, epsr)
     tanδ = max(tanδ, tandel)
     σ = min(σ, sigma)
@@ -378,7 +376,8 @@ function rwg_modes(
     # Verify inputs
     (a > 0u"m" && b > 0u"m") || throw(ArgumentError("a and b must be positive"))
     length_unit = Unitful.unit(a)
-    length_unit == Unitful.unit(b) || throw(ArgumentError("a and b must have the same units"))
+    length_unit == Unitful.unit(b) ||
+        throw(ArgumentError("a and b must have the same units"))
 
     f > 0u"Hz" || throw(ArgumentError("f must be positive"))
     freq_unit = Unitful.unit(f)
@@ -387,7 +386,6 @@ function rwg_modes(
     tanδ ≥ 0 || throw(ArgumentError("tanδ must be nonnegative"))
     σ > 0u"S/m" || throw(ArgumentError("σ must be posiive"))
     Rq ≥ 0u"m" || throw(ArgumentError("Rq must be nonnegative"))
-
 
     # Convert to Float64 in standard MKS units and remove units. 
     am = Unitful.ustrip(Float64, u"m", a)
@@ -400,10 +398,12 @@ function rwg_modes(
     rlattice = 4 * sqrt(nmodes / (am * bm * π))
     mmax = ceil(Int, rlattice * am)
     nmax = ceil(Int, rlattice * bm)
-    modes = [RWGMode(; p, m, n, a=am, b=bm) for  p in (TE,TM), m in 0:mmax, n in 0:nmax if 
-                        (p == TE && (m,n) ≠ (0,0)) || (p == TM && m > 0 && n > 0)]
+    modes = [RWGMode(; p, m, n, a = am, b = bm)
+             for p in (TE, TM), m in 0:mmax, n in 0:nmax
+             if
+             (p == TE && (m, n) ≠ (0, 0)) || (p == TM && m > 0 && n > 0)]
     sort!(modes; by = x -> x.kco)
-    deleteat!(modes, nmodes+1:length(modes))  
+    deleteat!(modes, (nmodes + 1):length(modes))
 
     wg = RWG(; a = am, b = bm, ϵᵣ, tanδ, σ = σSpm, Rq = Rqm, modes)
     setup_modes!(wg, fHz)
@@ -425,7 +425,6 @@ function rwg_modes(
     return modedata
 end
 
-
 """
     lookup_rwg(wgspec::AbstractString) -> (a, b)
 
@@ -440,86 +439,86 @@ Find the dimensions of a rectangular waveguide given its "spec" (a string using 
   with units of `u"inch"`.
 """
 function lookup_rwg(wgspec::AbstractString)
-    if wgspec == "WR2300" || wgspec == 	"WG0.0" || wgspec == "R3"
-    	a, b = 23.0u"inch", 11.5u"inch"
+    if wgspec == "WR2300" || wgspec == "WG0.0" || wgspec == "R3"
+        a, b = 23.0u"inch", 11.5u"inch"
     elseif wgspec == "WR2100" || wgspec == "WG0" || wgspec == "R4"
-    	a, b = 21u"inch", 10.5u"inch"
+        a, b = 21u"inch", 10.5u"inch"
     elseif wgspec == "WR1800" || wgspec == "WG1" || wgspec == "R5"
-    	a, b = 18.0u"inch", 9.0u"inch"
+        a, b = 18.0u"inch", 9.0u"inch"
     elseif wgspec == "WR1500" || wgspec == "WG2" || wgspec == "R6"
-	    a, b = 15.0u"inch", 7.5u"inch"
+        a, b = 15.0u"inch", 7.5u"inch"
     elseif wgspec == "WR1150" || wgspec == "WG3" || wgspec == "R8"
-    	a, b = 11.5u"inch", 5.75u"inch"
+        a, b = 11.5u"inch", 5.75u"inch"
     elseif wgspec == "WR975" || wgspec == "WG4" || wgspec == "R9"
-	    a, b = 9.75u"inch", 4.875u"inch"
+        a, b = 9.75u"inch", 4.875u"inch"
     elseif wgspec == "WR770" || wgspec == "WG5" || wgspec == "R12"
-    	a, b = 7.7u"inch", 3.85u"inch"
+        a, b = 7.7u"inch", 3.85u"inch"
     elseif wgspec == "WR650" || wgspec == "WG6" || wgspec == "R14"
-	    a, b = 6.5u"inch", 3.25u"inch"
+        a, b = 6.5u"inch", 3.25u"inch"
     elseif wgspec == "WR510" || wgspec == "WG7" || wgspec == "R18"
-    	a, b = 5.1u"inch", 2.55u"inch"
+        a, b = 5.1u"inch", 2.55u"inch"
     elseif wgspec == "WR430" || wgspec == "WG8" || wgspec == "R22"
-    	a, b = 4.3u"inch", 2.15u"inch"
-    elseif wgspec == "WG9" 
+        a, b = 4.3u"inch", 2.15u"inch"
+    elseif wgspec == "WG9"
         a, b = 3.5u"inch", 1.75u"inch"
     elseif wgspec == "WR340" || wgspec == "WG9A" || wgspec == "R26"
-	    a, b = 3.4u"inch", 1.7u"inch"
+        a, b = 3.4u"inch", 1.7u"inch"
     elseif wgspec == "WR284" || wgspec == "WG10" || wgspec == "R32"
-    	a, b = 2.84u"inch", 1.34u"inch"
+        a, b = 2.84u"inch", 1.34u"inch"
     elseif wgspec == "WG11"
-	    a, b = 2.372u"inch", 1.122u"inch"
+        a, b = 2.372u"inch", 1.122u"inch"
     elseif wgspec == "WR229" || wgspec == "WG11A" || wgspec == "R40"
-    	a, b = 2.29u"inch", 1.145u"inch"
+        a, b = 2.29u"inch", 1.145u"inch"
     elseif wgspec == "WR187" || wgspec == "WG12" || wgspec == "R48"
-	    a, b = 1.872u"inch", 0.872u"inch"
+        a, b = 1.872u"inch", 0.872u"inch"
     elseif wgspec == "WR159" || wgspec == "WG13" || wgspec == "R58"
-    	a, b = 1.59u"inch", 0.795u"inch"
+        a, b = 1.59u"inch", 0.795u"inch"
     elseif wgspec == "WR137" || wgspec == "WG14" || wgspec == "R70"
-	    a, b = 1.372u"inch", 0.622u"inch"
+        a, b = 1.372u"inch", 0.622u"inch"
     elseif wgspec == "WR112" || wgspec == "WG15" || wgspec == "R84"
         a, b = 1.122u"inch", 0.497u"inch"
     elseif wgspec == "WR102"
-    	a, b = 1.02u"inch", 0.51u"inch"
+        a, b = 1.02u"inch", 0.51u"inch"
     elseif wgspec == "WR90" || wgspec == "WG16" || wgspec == "R100"
-    	a, b = 0.9u"inch", 0.4u"inch"
+        a, b = 0.9u"inch", 0.4u"inch"
     elseif wgspec == "WR75" || wgspec == "WG17" || wgspec == "R120"
-	    a, b = 0.75u"inch", 0.375u"inch"
+        a, b = 0.75u"inch", 0.375u"inch"
     elseif wgspec == "WR62" || wgspec == "WG18" || wgspec == "R140"
-    	a, b = 0.622u"inch", 0.311u"inch"
+        a, b = 0.622u"inch", 0.311u"inch"
     elseif wgspec == "WR51" || wgspec == "WG19" || wgspec == "R180"
-	    a, b = 0.51u"inch", 0.255u"inch"
+        a, b = 0.51u"inch", 0.255u"inch"
     elseif wgspec == "WR42" || wgspec == "WG20" || wgspec == "R220"
-    	a, b = 0.42u"inch", 0.17u"inch"
+        a, b = 0.42u"inch", 0.17u"inch"
     elseif wgspec == "WR34" || wgspec == "WG21" || wgspec == "R260"
-	    a, b = 0.34u"inch", 0.17u"inch"
+        a, b = 0.34u"inch", 0.17u"inch"
     elseif wgspec == "WR28" || wgspec == "WG22" || wgspec == "R320"
-    	a, b = 0.28u"inch", 0.14u"inch"
+        a, b = 0.28u"inch", 0.14u"inch"
     elseif wgspec == "WR22" || wgspec == "WG23" || wgspec == "R400"
-	    a, b = 0.224u"inch", 0.112u"inch"
+        a, b = 0.224u"inch", 0.112u"inch"
     elseif wgspec == "WR19" || wgspec == "WG24" || wgspec == "R500"
-    	a, b = 0.188u"inch", 0.094u"inch"
+        a, b = 0.188u"inch", 0.094u"inch"
     elseif wgspec == "WR15" || wgspec == "WG25" || wgspec == "R620"
-	    a, b = 0.148u"inch", 0.074u"inch"
+        a, b = 0.148u"inch", 0.074u"inch"
     elseif wgspec == "WR12" || wgspec == "WG26" || wgspec == "R740"
-    	a, b = 0.122u"inch", 0.061u"inch"
+        a, b = 0.122u"inch", 0.061u"inch"
     elseif wgspec == "WR10" || wgspec == "WG27" || wgspec == "R900"
-	    a, b = 0.1u"inch", 0.05u"inch"
+        a, b = 0.1u"inch", 0.05u"inch"
     elseif wgspec == "WR8" || wgspec == "WG28" || wgspec == "R1200"
-    	a, b = 0.08u"inch", 0.04u"inch"
+        a, b = 0.08u"inch", 0.04u"inch"
     elseif wgspec == "WR6" || wgspec == "WG29" || wgspec == "R1400"
-	    a, b = 0.065u"inch", 0.0325u"inch"
+        a, b = 0.065u"inch", 0.0325u"inch"
     elseif wgspec == "WR7" || wgspec == "WG29" || wgspec == "R1400"
-    	a, b = 0.065u"inch", 0.0325u"inch"
+        a, b = 0.065u"inch", 0.0325u"inch"
     elseif wgspec == "WR5" || wgspec == "WG30" || wgspec == "R1800"
-	    a, b = 0.051u"inch", 0.0255u"inch"
+        a, b = 0.051u"inch", 0.0255u"inch"
     elseif wgspec == "WR4" || wgspec == "WG31" || wgspec == "R2200"
-    	a, b = 0.043u"inch", 0.0215u"inch"
+        a, b = 0.043u"inch", 0.0215u"inch"
     elseif wgspec == "WR3" || wgspec == "WG32" || wgspec == "R2600"
-	    a, b = 0.034u"inch", 0.017u"inch"
+        a, b = 0.034u"inch", 0.017u"inch"
     elseif wgspec == "WR2"
-    	a, b = 0.020u"inch", 0.010u"inch"
+        a, b = 0.020u"inch", 0.010u"inch"
     elseif wgspec == "WR1"
-	    a, b = 0.010u"inch", 0.0050u"inch"
+        a, b = 0.010u"inch", 0.0050u"inch"
     else
         throw(ArgumentError("Unknown waveguide specification: $wgspec"))
     end
@@ -561,15 +560,12 @@ The table is printed to the user's console using the `PrettyTables` package.
   used to format the six columns of the table.
 """
 function rwg_modetable(
-    wgspec::AbstractString,
-    f::Unitful.Quantity{<:Real, Unitful.dimension(u"Hz")}
-    ; 
-    length_unit::Unitful.FreeUnits{Tl, Unitful.dimension(u"m")} = u"inch",
-    kwargs...
-    ) where {Tl}
-
+        wgspec::AbstractString,
+        f::Unitful.Quantity{<:Real, Unitful.dimension(u"Hz")};
+        length_unit::Unitful.FreeUnits{Tl, Unitful.dimension(u"m")} = u"inch",
+        kwargs...) where {Tl}
     (a, b) = lookup_rwg(wgspec)
-    rwg_modetable(length_unit(a), length_unit(b), f; wgname=wgspec, kwargs...)
+    return rwg_modetable(length_unit(a), length_unit(b), f; wgname = wgspec, kwargs...)
 end
 
 """
@@ -581,22 +577,19 @@ as `Unitful` quantities having dimension of length.  Both must be expressed in t
 or `u"inch"`.  The default value of `length_unit` for this method is whatever length unit `a` and `b` use.
 """
 function rwg_modetable(
-    a::Unitful.Quantity{<:Real, Unitful.dimension(u"m")},
-    b::Unitful.Quantity{<:Real, Unitful.dimension(u"m")},
-    f::Unitful.Quantity{<:Real, Unitful.dimension(u"Hz")} 
-    ;
-    nmodes::Int = 10,
-    ϵᵣ::Real = 1.0,
-    epsr::Real=1.0, 
-    tanδ::Real = 0.0,
-    tandel::Real=0.0, 
-    σ::Unitful.Quantity{<:Real, Unitful.dimension(u"S/m")} = Inf*u"S/m",
-    sigma::Unitful.Quantity{<:Real, Unitful.dimension(u"S/m")} = Inf*u"S/m",
-    Rq::Unitful.Quantity{<:Real, Unitful.dimension(u"m")} = 0.0u"m",
-    col_fmts = ["%s", "%i", "%i", "%#.8g", "%8.4f", "%8.4f"],
-    wgname::AbstractString = "RWG",
-    )
-    
+        a::Unitful.Quantity{<:Real, Unitful.dimension(u"m")},
+        b::Unitful.Quantity{<:Real, Unitful.dimension(u"m")},
+        f::Unitful.Quantity{<:Real, Unitful.dimension(u"Hz")};
+        nmodes::Int = 10,
+        ϵᵣ::Real = 1.0,
+        epsr::Real = 1.0,
+        tanδ::Real = 0.0,
+        tandel::Real = 0.0,
+        σ::Unitful.Quantity{<:Real, Unitful.dimension(u"S/m")} = Inf * u"S/m",
+        sigma::Unitful.Quantity{<:Real, Unitful.dimension(u"S/m")} = Inf * u"S/m",
+        Rq::Unitful.Quantity{<:Real, Unitful.dimension(u"m")} = 0.0u"m",
+        col_fmts = ["%s", "%i", "%i", "%#.8g", "%8.4f", "%8.4f"],
+        wgname::AbstractString = "RWG")
     ϵᵣ = max(ϵᵣ, epsr)
     tanδ = max(tanδ, tandel)
     σ = min(σ, sigma)
@@ -623,13 +616,11 @@ function rwg_modetable(
         linelen += length(phrase)
         title2 *= string(phrase, ",")
     end
-    title = title2[begin:end-1]
+    title = title2[begin:(end - 1)]
 
     column_labels = ["Type", "m", "n", "Cutoff Freq.", "Guide Wavelength", "Attenuation"]
     column_units = ["", "", "", "[$freq_unit]", "[$length_unit]", "[dB/$length_unit]"]
     header = (column_labels, column_units)
-
-
 
     if is_html_environment()
         p = pretty_table(
@@ -639,8 +630,8 @@ function rwg_modetable(
             title_alignment = :c,
             header,
             formatters = ft_printf(col_fmts, 1:6),
-            tf = tf_html_default,
-            )
+            tf = tf_html_default
+        )
         #Main.IJulia.display("text/html", p)
     else
         println()
@@ -653,8 +644,8 @@ function rwg_modetable(
             title_autowrap = true,
             header,
             formatters = ft_printf(col_fmts, 1:6),
-            tf = tf_unicode_rounded,
-            )
+            tf = tf_unicode_rounded
+        )
     end
 
     return nothing
