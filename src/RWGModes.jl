@@ -130,7 +130,7 @@ function setup_modes!(wg::RWG, f::Real, nmodes::Integer = length(wg.modes))
         append!(wg.modes, modes)
     else
         nmodes == length(wg.modes) ||
-            throw(ArgumentError("nmodes not equal to number of existing modes in c"))
+            throw(ArgumentError("nmodes not equal to number of existing modes in wg"))
     end
 
     k₀ = 2π * f / c₀ # free-space wavenumber [rad/m]
