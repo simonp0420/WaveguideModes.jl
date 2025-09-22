@@ -8,6 +8,8 @@ using PrettyTables: pretty_table, ft_printf, tf_unicode_rounded, tf_html_default
                     HtmlTableFormat
 using AbstractPlutoDingetjes: is_inside_pluto
 using FunctionZeros: besselj_zero, besselj_deriv_zero
+using StaticArrays: @SVector
+using SimpleNonlinearSolve: SimpleNonlinearSolve as snls
 
 export @u_str
 export TE, TM, setup_modes!,

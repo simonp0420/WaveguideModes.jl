@@ -7,3 +7,7 @@ docs/Manifest.toml
 docs/build*
 docs/src/*.md
 !docs/src/references.md
+!docs/Notes/article_notes.pdf
+docs/Notes/
+compathelper_key
+compathelper_key.pub

@@ -324,6 +324,301 @@ function rwgte10gz(
     return (γ, Z)
 end
 
+
+
+
+"""
+    rwggz(p, m, n, a, b, f; ϵᵣ=1.0, tanδ=0.0, σ=Inf, Rq=0.0) -> (γ, Z)
+    rwggz(p, m, n, a, b, f; epsr=1.0, tandel=0.0, sigma=Inf, Rq=0.0) -> (γ, Z)
+
+Accurately compute γ and Z (prop. constant and wave impedance) of a mode in rectangular guide with rough walls.
+
+This method accepts SI values as pure numbers (without attached units). 
+## Required Positional Arguments
+- `p::TETM`: The mode type.
+- `m::Int`, `n::Int`: Mode indices in the x and y directions, resp.
+- `a::Real`,  `b::Real`: The waveguide x and y dimensions [m].
+- `f`: Frequency [Hz].
+## Optional Keyword Arguments
+- `ϵᵣ` or `epsr`: Dielectric constant of material filling the waveguide. Default value is `1.0`.
+- `tanδ` or `tandel`: Loss tangent of material filling the waveguide. Default value is `0.0`. 
+- `σ` or `sigma`: The bulk conductivity of the waveguide metal walls [S/m]. Default value is `Inf`.
+- `Rq`: The RMS surface roughness of the waveguide walls [m]. Default value is `0.0`.
+
+## Return Value
+The tuple `(γ, Z)` where:
+- `γ`: Complex propagation constant [neper/m]
+- `Z`: Complex wave impedance [Ω]
+
+## References:
+- [1] Yeap, Kim Ho et al., "Attenuation in circular and rectangular waveguides." 
+  Electromagnetics 37, no. 3 (2017): 171-184.
+"""
+function rwggz(
+        p::TETM,
+        m::Int,
+        n::Int,
+        a::Real,
+        b::Real,
+        f::Real;
+        ϵᵣ::Real = 1.0,
+        epsr::Real = 1.0,
+        tanδ::Real = 0.0,
+        tandel::Real = 0.0,
+        σ::Real = Inf,
+        sigma::Real = Inf,
+        Rq::Real = 0.0)
+    ϵᵣ = max(ϵᵣ, epsr)
+    tanδ = max(tanδ, tandel)
+    σ = min(σ, sigma)
+
+    isinf(σ) &&
+        !iszero(Rq) &&
+        throw(ArgumentError("Rq must be zero for infinite conductivity"))
+
+    ω = 2π * f
+    k₀ = 2π * f / c₀ # free-space wavenumber [rad/m]
+    rootϵ = mysqrt(ϵᵣ * complex(1.0, -tanδ))
+    k = k₀ * rootϵ # wavenumber in dielectric
+    k² = k^2
+    ηnorm = inv(rootϵ) # η/η₀
+    η = η₀ * ηnorm # intrinsic impedance in dielectric
+    Zs = Zsurface(f, σ, Rq)
+    params = (; m, n, k, a, b)
+    Δs0 = @SVector [0.0, 0.0, 0.0, 0.0]
+    prob = snls.SimpleNonLinearProblem(nlsovekdxakdyb, Δs0, params)
+    sol = snls.solve(prob, Snls.SimpleNewtonRaphson)
+    snls.SciMLBase.successful_retcode(sol) || error("Failed nonlinear solve")
+    @show sol.resid
+    Δs = sol.u
+    Δkxa = complex(Δs[1], Δs[2])
+    Δkyb = complex(Δs[3], Δs[4])
+    kx = (m * π + Δkxa) / a
+    ky = (n * π + Δkyb) / b
+    kρ² = kx^2 + ky^2
+    kz = sqrt(k^2 - kρ²)
+    γ = im * kz
+    if isTE(p)
+        Z = im * k * η / γ
+    else
+        Z = η * γ / (im * k)
+    end
+
+    return (γ, Z)
+end
+
+"""
+    nlsolvedkxadkyb(Δs, params) -> residual::SVector{4, Float64}
+
+Function defining a NonLinearProblem whose solution provides rigorously correct kx and ky values for a rectangular waveguide.
+
+## Positional Arguments
+- `Δs`: A 4-vector containing the unitless values `[real(Δkxa), imag(Δkxa), real(Δkyb), imag(Δkyb)].  Here `Δkxa` is the departure
+  of `kx` from its nominal value (for PEC walls) of `m*π/a`.  Similarly, `Δkyb` is the departure of `ky` from its nominal value
+  of `n*π/b`.  The entries in `Δs` are to be adjusted to produce a zero return vector.
+- `params`:  A named tuple containing the fixed parameters of the waveguide problem.  These are
+  - `m` and `n`: Mode indices in the x and y directions, respectively.
+  - `k`: The (complex) wavenumber in the dielectric filling the waveguide [radians/m].
+  - `a` and  `b`:  The waveguide (inner) dimensions in the x and y directions, respectively [m].
+  - `ηwn`: Waveguide wall surface impedance normalized to the intrinsic impedance of the dielectric filling the waveguide.
+
+## Return Value
+- `residual`: A static 4-vector containing the real and imaginary parts of the two expressions that must be zeroed for a valid 
+  solution.
+
+## Reference: 
+
+"""
+function nlsolvedkxadkyb(Δs::AbstractVector,  params)
+    Δkxa = complex(Δs[1], Δs[2])
+    Δkyb = complex(Δs[3], Δs[4])
+    (; m, n, k, a, b, ηwn) = params
+    kxa = m * π + Δkxa
+    kx = kxa / a
+    kyb = n * π + Δkyb
+    ky = kyb / b
+    kρ² = kx^2 + ky^2
+    sux, cux = sincos((kxa + m*π) / 2)
+    suy, cuy = sincos((kyb + n*π) / 2)
+    kz = sqrt(k^2 - kρ²)
+
+    eq1 = (im * k * ky * suy / kρ² + ηwn * cuy) * (im * ηwn * k * ky * cuy / kρ² - suy) - (kz * kx / kρ²)^2 * ηwn * cuy * suy
+    eq2 = (im * k * kx * sux / kρ² + ηwn * cux) * (im * ηwn * k * kx * cux / kρ² - sux) - (kz * ky / kρ²)^2 * ηwn * cux * sux
+    #eq1 *= 1000
+    #eq2 *= 1000
+    return @SVector [real(eq1), imag(eq1), real(eq2), imag(eq2)]
+end
+
+"""
+    nlsolvekxakyb(rikakbs, params) -> residual::SVector{4, Float64}
+
+Function defining a NonLinearProblem whose solution provides rigorously correct kx and ky values for a rectangular waveguide.
+
+## Positional Arguments
+- `rikakbs`: A 4-vector containing the unitless values `[real(kxa), imag(kxa), real(kyb), imag(kyb)].  Here `kxa` is the product
+  of `kx` and `a` (the waveguide x dimension) Similarly, `kyb` is the product of `ky` and `b` (the waveguide y dimension).
+  The entries in `rikakbs` are to be adjusted to produce a zero return vector.
+- `params`:  A named tuple containing the fixed parameters of the waveguide problem.  These are
+  - `m` and `n`: Mode indices in the x and y directions, respectively.
+  - `k`: The (complex) wavenumber in the dielectric filling the waveguide [radians/m].
+  - `a` and  `b`:  The waveguide (inner) dimensions in the x and y directions, respectively [m].
+  - `ηwn`: Waveguide wall surface impedance normalized to the intrinsic impedance of the dielectric filling the waveguide.
+
+## Return Value
+- `residual`: A static 4-vector containing the real and imaginary parts of the two expressions that must be zeroed for a valid 
+  solution.
+
+## Reference: 
+
+"""
+function nlsolvekxakyb(rikakbs::AbstractVector,  params)
+    kxa = complex(rikakbs[1], rikakbs[2])
+    kyb = complex(rikakbs[3], rikakbs[4])
+    (; m, n, k, a, b, ηwn) = params
+    kx = kxa / a
+    ky = kyb / b
+    kρ² = kx^2 + ky^2
+    sux, cux = sincos((kxa + m*π) / 2)
+    suy, cuy = sincos((kyb + n*π) / 2)
+    kz = sqrt(k^2 - kρ²)
+
+    eq1 = (im * k * ky * suy / kρ² + ηwn * cuy) * (im * ηwn * k * ky * cuy / kρ² - suy) - (kz * kx / kρ²)^2 * ηwn * cuy * suy
+    eq2 = (im * k * kx * sux / kρ² + ηwn * cux) * (im * ηwn * k * kx * cux / kρ² - sux) - (kz * ky / kρ²)^2 * ηwn * cux * sux
+    #eq1 *= 1e8
+    #eq2 *= 1e8
+    return @SVector [real(eq1), imag(eq1), real(eq2), imag(eq2)]
+end
+
+"""
+    e0h0mat(kxa, kyb, params)
+
+Compute the dispersion matrix `A` whose null space defines the 
+"""
+function e0h0mat(kxa, kyb, params)
+    # Set up matrix Eq. (11) of notes
+    (; m, n, k, a, b, ηwn) = params
+    kx = kxa / a
+    ky = kyb / b
+    kρ² = kx^2 + ky^2
+    ux = (m * π + kxa) / 2
+    uy = (n * π + kyb) / 2
+    sux, cux = sincos(ux)
+    suy, cuy = sincos(uy)
+    kz = sqrt(k^2 - kρ²)
+    hyz = ky * kz / kρ²
+    hx0 = kx * k / kρ²
+    hxz = kx * kz / kρ²
+    hy0 = ky * k / kρ²
+
+    mat = zeros(ComplexF64, 4, 2)
+    mat[1,1] = -im * ηwn * hx0 * cux + sux
+    mat[2,1] = im * hyz * sux
+    mat[3,1] = im * ηwn * hy0 * cuy - suy
+    mat[4,1] =  im * hxz * suy
+
+    mat[1,2] = im * ηwn * hyz * cux
+    mat[2,2] = im * hx0 * sux + ηwn * cux
+    mat[3,2] = im * ηwn * hxz * cuy
+    mat[4,2] = -im * hy0 * suy - ηwn * cuy
+
+    return mat
+end
+
+
+"""
+    compute_As_kxakybs(FGHz, rwg, mode_params; iterate=false)
+
+    Compute dispersion matrices for a rectangular waveguide with lossy walls using 4 choices of (δx, δy)
+
+## Input Arguments
+- `FGHz`: The desired analysis frequency in GHz.
+- `rwg::RWG`: An `RWG` instance with at least fields `a`, `b`, `σ`, and `Rq` set.
+- `mode_params`: Named tuple or struct with fields `m::Integer`, `n::Integer`, `p::TETM` defining the desired mode.
+- `iterate`: If `false` (default), then the `δx` and `δy` values computed from [1] are used directly to compute kx and ky and thus γ.
+  If true, then these values are used as starting values in a root-finding algorithm implementing the numerical search described in
+  [2].
+
+## Return value
+`(As, kxakybs)`, where
+
+- `As`: A 4-vector containing four complex matrices of size (4,2) containing the coefficients of E0 and η*H0 in the modal 
+  dispersion relation.  `As[i]` contains the matrix obtained by choosing (δx, δy) to be
+  - `i==1`: (δx1, δy1)
+  - `i==2`: (δx2, δy1)
+  - `i==1`: (δx1, δy2)
+  - `i==1`: (δx2, δy2)
+
+- `kxakybs`: A 4-vector containing tuples `(kx*a, ky*b)` computed for the same four cases as `As`.
+
+## References
+- [1] Yeap, Kim Ho, et al. "Attenuation in circular and rectangular waveguides." Electromagnetics 37.3 (2017): 171-184.
+- [2] Yeap, Kim Ho, et al. "Attenuation in rectangular waveguides with finite conductivity walls." Radioengineering 20.2 (2011).
+"""
+function compute_As_kxakybs(FGHz::Real, rwg::RWG, mode_params; iterate=false)
+    (; a, b, σ, Rq) = rwg
+    As = [zeros(ComplexF64, 4,2) for _ in 1:4]
+    kxakybs = [(zero(ComplexF64), zero(ComplexF64)) for _ in 1:4]
+    (; m, n, p) = mode_params
+    fhz = FGHz * 1e9
+    setup_modes!(rwg, fhz, 10)
+    k = zero(ComplexF64) + 2π * fhz / c₀
+    ηwn = Zsurface(fhz, σ, Rq) / η₀
+    if isTE(p)
+        acm = a * 100
+        bcm = b * 100
+        ΔTx = im * (2.62e-6 / acm^2)
+        ΔTy = im *  (5.2e-7 / bcm^2)
+    else 
+        ΔTx = ΔTy = zero(ComplexF64)
+    end
+    if m > 0
+        ka = k * a
+        δx1 = im * ηwn * ka / (m * π) + ΔTx
+        δx2 = im * ηwn * (m * π) / ka + ΔTx
+    else
+        δx1 = δx2 = ΔTx
+    end
+
+    if n > 0
+        kb = k * b
+        δy1 = im * ηwn * kb / (n * π) + ΔTy
+        δy2 = im * ηwn * (n * π) / kb + ΔTy
+    else
+        δy1 = δy2 = ΔTy
+    end
+    params = (; a, b, m, n, k, ηwn)
+    modei = findfirst(1:length(rwg.modes)) do i
+        mode = rwg.modes[i]
+        mode.p == p && mode.m == m && mode.n == n
+    end
+    isnothing(modei) && error("Mode not found in rwg.modes")
+
+    for (case, δs) in enumerate(((δx1,δy1), (δx2,δy1), (δx1,δy2), (δx2,δy2)))
+        δx, δy = δs
+        Δkxa = 2 * δx
+        Δkyb = 2 * δy
+        Δs0 = @SVector[real(Δkxa), imag(Δkxa), real(Δkyb), imag(Δkyb)]
+        if iterate
+            prob = snls.NonlinearProblem(nlsolvedkxadkyb, Δs0, params)
+            sol = snls.solve(prob, snls.SimpleNewtonRaphson(autodiff=snls.AutoFiniteDiff()))
+            snls.SciMLBase.successful_retcode(sol) || error("Failed nonlinear solve for case $case")
+            Δs = sol.u
+        else
+            Δs = Δs0
+        end
+        Δkxa = complex(Δs[1], Δs[2])
+        Δkyb = complex(Δs[3], Δs[4])
+        kxa = m * π + Δkxa 
+        kyb = n * π + Δkyb
+        kxakybs[case] = (kxa, kyb)
+        A = WaveguideModes.e0h0mat(kxa, kyb, params)
+        As[case] .= A
+    end
+    return As, kxakybs
+end
+
+
+
 """
     rwg_modes(a, b, f; nmodes=10, ϵᵣ=1.0, tanδ=0.0, σ=Inf*u"S/m", Rq=0.0u"m") -> modedata
 
