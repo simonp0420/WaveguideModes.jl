@@ -452,7 +452,8 @@ end
 """
     nlsolvekxakyb(rikakbs, params) -> residual::SVector{4, Float64}
 
-Function defining a NonLinearProblem whose solution provides rigorously correct kx and ky values for a rectangular waveguide.
+Function defining a NonLinearProblem whose zero solves the determinantal equations for the
+kx and ky values of a rectangular waveguide.
 
 ## Positional Arguments
 - `rikakbs`: A 4-vector containing the unitless values `[real(kxa), imag(kxa), real(kyb), imag(kyb)].  Here `kxa` is the product
@@ -469,6 +470,9 @@ Function defining a NonLinearProblem whose solution provides rigorously correct 
   solution.
 
 ## Reference: 
+[1] Yeap, Kim Ho, et al. "Attenuation in circular and rectangular waveguides." **Electromagnetics**
+37.3 (2017): 171-184.  See Eqs. (6a) and (6b).
+[2] P. Simon, "Notes on Attenuation in Circular and Rectangular Waveguides", Eqs (7a) and (7b).
 
 """
 function nlsolvekxakyb(rikakbs::AbstractVector,  params)
@@ -492,7 +496,21 @@ end
 """
     e0h0mat(kxa, kyb, params)
 
-Compute the dispersion matrix `A` whose null space defines the 
+Compute the dispersion matrix `A` whose null space defines the possible z-component field coefficients.
+
+## Input Arguments
+- `kxa`, `kyb`: The (unitless) product of proposed x and y modal wavenumbers times the x and y dimensions of the
+  waveguide, resp.
+- `params`: A struct or named tuple containing the following parameters of the waveguide problem:
+  - `m`, `n`: Mode numbers in the x and y directions, resp.
+  - `a`, `b`: Waveguide x and y dimensions, resp. [m]
+  - `ηwn`: The wall surface impedance normalized to the intrinsic impedance of the dielectric filling the waveguide.
+
+## Return Value
+- `A`: `ComplexF64` matrix of dimensions 4×2 computed using the provided inputs, whose nullspace spans
+  the possible modal vectors `[E₀, η*H₀]`.  Here `E₀` is the coefficient of the z-component of electric field,
+  `H₀` is the coefficient of the z-component of magnetic field, and η is the intrinsic impedance of the
+  dielectric filling the waveguide.
 """
 function e0h0mat(kxa, kyb, params)
     # Set up matrix Eq. (11) of notes
