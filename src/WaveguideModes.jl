@@ -8,7 +8,6 @@ using Accessors: @set, @reset
 using PrettyTables: pretty_table, ft_printf, tf_unicode_rounded, tf_html_default,
                     HtmlTableFormat
 using AbstractPlutoDingetjes: is_inside_pluto
-using FunctionZeros: besselj_zero, besselj_deriv_zero
 using StaticArrays: @SVector, @SMatrix
 using SimpleNonlinearSolve: SimpleNonlinearSolve as snls
 using PRIMA: bobyqa
