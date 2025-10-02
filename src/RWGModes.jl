@@ -39,7 +39,7 @@ end
 Convenient keyword-argument constructor that defaults the frequency-dependent fields to zero and uses waveguide dimensions in meters.
 """
 RWGMode(; p, m, n, a, b, f = 0, γ = 0, Z = 0) = RWGMode(
-    p, m, n, π * hypot(m / a, n / b), f, γ, Z)
+    p, m, n, rwgkco(a, b, m, n), f, γ, Z)
 
 """
     RWG <: HomogeneousMetallicWaveguide
@@ -139,11 +139,16 @@ function setup_modes!(wg::RWG, f::Real, nmodes::Integer = length(wg.modes))
     k² = k^2
     ηnorm = inv(rootϵ) # η/η₀
     η = η₀ * ηnorm # intrinsic impedance in dielectric
-    Rs = real(Zsurface(f, σ, Rq, :normal)) # surface resistance ([Ω/□])
+    Zs = Zsurface(f, σ, Rq, :normal) # surface impedance ([Ω/□])
+    Rs = real(Zs) # surface resistance ([Ω/□])
 
     # Update γ and Z
+    mnold = (0, 0)
+    local γte, γtm # So we can reuse old values within the loop below
     for (q, mode) in pairs(wg.modes)
         (; m, n, p, kco) = mode
+
+        # For TE10 or TE01, use Lomakin 2018
         if (p, m, n) == (TE, 1, 0)
             (γ, Z) = rwgte10gz(a, b, f; ϵᵣ, tanδ, σ, Rq)
             Z /= η₀
@@ -151,19 +156,62 @@ function setup_modes!(wg::RWG, f::Real, nmodes::Integer = length(wg.modes))
             (γ, Z) = rwgte10gz(b, a, f; ϵᵣ, tanδ, σ, Rq)
             Z /= η₀
         else
-            γ = mysqrt(kco^2 - k²)
-            α = alphaploss(wg, q, k, Rs/real(η))
-            γ += α
+            # For all other modes use Collin's variational approach:
+            (m, n) ≠ mnold && ((; γte, γtm) = collin_gammas(a, b, m, n, k, Zs / η))
+            γ = isTE(p) ? γte : γtm 
             β = -im * γ
-            if p == TE
-                Z = k / β * ηnorm
-            else
-                Z = β / k * ηnorm
-            end
+            Z = isTE(p) ? (k / β * ηnorm) : (β / k * ηnorm)
         end
         wg.modes[q] = update(mode; f, γ, Z)
+        mnold = (m, n)
     end
     return wg
+end
+
+
+"""
+    alphaploss(params, k, Rsnorm)
+
+Compute the attenuation constant of a rectangular waveguide using the classical power loss method.
+
+## Input Arguments
+- `params`: A NamedTuple or other destructurable object containing the following fields:
+  - `a`, `b`: waveguide dimensions in x and y directions [m].
+  - `m`, `n`, `p::TETM`: Mode indices and mode type.
+  - `kco`: Cutoff wavenumber of mode [rad/m].
+- `k`: Wavenumber in the dielectric filling the waveguide.
+- `Rsnorm`: Ratio of surface resistance of the waveguide metal walls to the intrinsic impedance of the 
+  dielectric filling the waveguide.
+
+  ## Return Value
+- `α`:  For frequencies above cutoff, the attenuation constant [np/m] calculated via the classical 
+  power loss method.  For frequencies below cutoff, zero is returned.
+
+## References:
+1. R. E. Collin, **Field Theory of Guided Waves** 2cd Edition, IEEE Press, 1991, Table 5.2, p. 351.
+2. J. Uher, J. Bornemann and U. Rosenberg, **Waveguide Components for Antenna Feed
+   Systems: Theory and CAD**, Artech House, 1991, p. 114.
+"""
+function alphaploss(params, k::Number, Rsnorm::Real)
+    (; a, b, m, n, p, kco) = params
+    iszero(Rsnorm) && return 0.0
+    ratio = real((kco / k)^2)
+    ratio ≥ 1 && return 0.0
+    boa = b / a
+    α = 2 * real(Rsnorm) / (b * sqrt(1 - ratio))
+    m²b² = (m * b)^2
+    n²a² = (n * a)^2
+    if p == TE
+        ϵ₀ₙ = iszero(n) ? 1 : 2
+        α *= (
+            (1 + boa) * ratio +
+            boa * (ϵ₀ₙ / 2 - ratio) * (m²b² / boa + n²a²) / (m²b² + n²a²)
+        )
+    else
+        n²a³ = n²a² * a
+        α *= (m²b² * b + n²a³) / (m²b² * a + n²a³)
+    end
+    return α
 end
 
 """
@@ -188,56 +236,12 @@ Compute the attenuation constant of a rectangular waveguide using the classical 
    Systems: Theory and CAD**, Artech House, 1991, p. 114.
 """
 function alphaploss(rwg::RWG, modeindex::Integer, k, Rsnorm)
-    (; a, b)  = rwg
-    (; m, n, p, kco)  = rwg.modes[modeindex]
+    (; a, b) = rwg
+    (; m, n, p, kco) = rwg.modes[modeindex]
     params = (; a, b, m, n, p, kco)
     return alphaploss(params, k, Rsnorm)
 end
 
-"""
-    alphaploss(params, k, Rsnorm)
-
-Compute the attenuation constant of a rectangular waveguide using the classical power loss method.
-
-## Input Arguments
-- `params`: A NamedTuple or other destructurable object containing the following fields:
-  - `a`, `b`: waveguide dimensions in x and y directions [m].
-  - `m`, `n`, `p::TETM`: Mode indices and mode type.
-  - `kco`: Cutoff wavenumber of mode [rad/m].
-- `k`: Wavenumber in the dielectric filling the waveguide.
-- `Rsnorm`: Ratio of surface resistance of the waveguide metal walls to the intrinsic impedance of the 
-  dielectric filling the waveguide.
-
-  ## Return Value
-- `α`:  For frequencies above cutoff, the attenuation constant [np/m] calculated via the classical 
-  power loss method.  For frequencies below cutoff, zero.
-
-## References:
-1. R. E. Collin, **Field Theory of Guided Waves** 2cd Edition, IEEE Press, 1991, Table 5.2, p. 351.
-2. J. Uher, J. Bornemann and U. Rosenberg, **Waveguide Components for Antenna Feed
-   Systems: Theory and CAD**, Artech House, 1991, p. 114.
-"""
-function alphaploss(params, k::Number, Rsnorm::Real)
-    (; a, b, m, n, p, kco) = params
-    iszero(Rsnorm) && return 0.0
-    ratio = real((kco / k)^2)
-    ratio ≥ 1 && return 0.0
-    boa = b / a
-    α = 2 * real(Rsnorm) / (b * sqrt(1 - ratio))
-    m²b² = (m * b)^2
-    n²a² = (n * a)^2
-    if p == TE
-        ϵ₀ₙ = iszero(n) ? 1 : 2
-        α *= (
-              (1 + boa) * ratio +
-               boa * (ϵ₀ₙ / 2 - ratio) * (m²b² / boa + n²a²) / (m²b² + n²a²)
-              )
-    else
-        n²a³ = n²a² * a
-        α *= (m²b² * b + n²a³) / (m²b² * a + n²a³)
-    end
-    return α
-end
 
 
 """
@@ -252,7 +256,7 @@ Compute the cutoff frequency for a rectangular waveguide.
 # Return value:
 `kco`: Cutoff wavenumber in inverse units of `a` and `b`.
 """
-rwgkco(a::Real, b::Real, m::Integer, n::Integer) = sqrt((m * π / a)^2 + (n * π / b)^2)
+rwgkco(a::Real, b::Real, m::Integer, n::Integer) = π * hypot(m / a, n / b)
 
 """
     collin_gamma(a, b, m, n, p, k, Zsnorm)
@@ -282,10 +286,8 @@ function collin_gamma(a::Real, b::Real, m::Integer, n::Integer, p::TETM, k, Zsno
     end
 end
 
-    
-
 """
-    collin_gammas(a, b, m, n, p, k, Zsnorm)
+    collin_gammas(a, b, m, n, k, Zsnorm)
 
 Compute variational estimate of the complex attenuation constant for a rectangular waveguide mode, 
 using the variational method described on pages 350-354 of the reference.
@@ -293,7 +295,6 @@ using the variational method described on pages 350-354 of the reference.
 ## Arguments
 - `a`, `b`: Waveguide dimensions along x and y, respectively [m].
 - `m`, `n`: Nonnegative integer mode numbers along x and y, respectively, not both zero, and neither zero if `p == TM`.
-- `p::TETM`: Mode type (TE or TM).
 - `k`: The wavenumber in the dielectric medium filling the waveguide.
 - `Zsnorm`: The surface impedance of the metal waveguide walls normalized to the intrinsic impedance of the dielectric medium.
 
@@ -301,7 +302,6 @@ using the variational method described on pages 350-354 of the reference.
 `(; γte, γtm)`:  TE and TM complex attenuation constants [Np/m].
 """
 function collin_gammas(a::Real, b::Real, m::Integer, n::Integer, k, Zsnorm)
-
     (m, n) ≠ (0, 0) || throw(ArgumentError("Both mode indices are zero"))
     zeroindex = any(iszero, (m, n))
     kco = rwgkco(a, b, m, n)
@@ -319,28 +319,28 @@ function collin_gammas(a::Real, b::Real, m::Integer, n::Integer, k, Zsnorm)
     nπob² = nπob^2
     # Constants in Eq. (66a) of reference (multiplied by a to make all terms unitless):
     f11 = im * k * ((a^2 * b) / (ϵ₀ₘ * ϵ₀ₙ)) / Zsnorm
-    term11b = a * kco² * (2a/ϵ₀ₘ + 2b/ϵ₀ₙ) + a * β₀² / kco² * (b * nπob² + a * mπoa²)
+    term11b = a * kco² * (2a / ϵ₀ₘ + 2b / ϵ₀ₙ) + a * β₀² / kco² * (b * nπob² + a * mπoa²)
     A12 = k² * (a / kco² * mπoa * nπob * (b - a))
     A21 = a * β₀² / kco² * mπoa * nπob * (b - a)
     term22b = k² * (a / kco² * (a * nπob² + b * mπoa²))
 
     # For TE₀ₙ or TEₘ₀ modes, solve (66a) in closed form:
-    if zeroindex 
+    if zeroindex
         γ² = -term11b / f11 - β₀²
         γte = mysqrt(γ²)
         return (; γte, γtm = NaN)
     end
 
-    parameters = (; a, β=β₀, β²=β₀², f11, term11b, A12, A21, term22b)
+    parameters = (; a, β = β₀, β² = β₀², f11, term11b, A12, A21, term22b)
 
-    # Initial search along a line in the complex Δγa plain to locate two minima:
-    αpl = alphaploss((; a, b, p=TE, m, n, kco), k, real(Zsnorm))
+    # Initial brute search along a line in the complex Δγa plain to locate two minima:
+    αpl = alphaploss((; a, b, p = TE, m, n, kco), k, real(Zsnorm))
     if real(k) > kco
         nsamples = 500
         αa_max = 3 * αpl * a
-        αas = range(0, αa_max, length=nsamples)
+        αas = range(0, αa_max, length = nsamples)
         i1 = i2 = 0 # Initialize the locations of minima in αas
-        dmag2_im1 = dmag2_im2 = -Inf
+        dmag2_im1 = dmag2_im2 = -Inf # Initialize previous two results
         for (i, αa) in pairs(αas)
             Δβa = -αa
             γ = αa / a + im * (β₀ + Δβa / a)
@@ -354,17 +354,18 @@ function collin_gammas(a::Real, b::Real, m::Integer, n::Integer, k, Zsnorm)
                     break
                 end
             end
-            dmag2_im1, dmag2_im2 = dmag2, dmag2_im1 
+            dmag2_im1, dmag2_im2 = dmag2, dmag2_im1 # Update prev. results
         end
-        any(iszero, (i1,i2)) && error("Got a zero: i1 = $i1, i2 = $i2")
+        any(iszero, (i1, i2)) && error("Got a zero: i1 = $i1, i2 = $i2")
     else
         # At or below cutoff.  Can only find a single solution here (typ. TM)
         i1 = i2 = 1
-    end 
+    end
+    # Now polish the minima
     αa_spread = αas[i2] - αas[i1]
     iszero(αa_spread) && (αa_spread = 1e-4) # At or below cutoff
     local data1, data2
-    for i in (i1,i2)
+    for i in (i1, i2)
         αa = αas[i]
         Δβa = -αa
         Δγa₀ = complex(αa, Δβa)
@@ -387,16 +388,14 @@ function collin_gammas(a::Real, b::Real, m::Integer, n::Integer, k, Zsnorm)
             data2 = (; x, γ, A, U, S, V, info)
         end
     end
-    norm(data1.A * data1.V[:,end]) < 1e-2 || @warn "Large residual for data1" data1
-    norm(data2.A * data2.V[:,end]) < 1e-2 || @warn "Large residual for data2" data2
+    norm(data1.A * data1.V[:, end]) < 1e-2 || @warn "Large residual for data1" data1
+    norm(data2.A * data2.V[:, end]) < 1e-2 || @warn "Large residual for data2" data2
     γtm, γte = real(data1.γ) < real(data2.γ) ? (data1.γ, data2.γ) : (data2.γ, data1.γ)
     return (; γte, γtm)
 end
 
-
-
 #penalty_fun(x, x0 = 0.9, ϵ = 0.01) = log1p(exp((x - x0) / ϵ)) * ϵ
-function penalty_fun(x; a = 100, n=2, x0 = 0.9, ϵ = 0.01)
+function penalty_fun(x; a = 100, n = 2, x0 = 0.9, ϵ = 0.01)
     xⁿ = x^n
     if xⁿ > 5
         result = a * (xⁿ - x0)
@@ -432,7 +431,6 @@ function collinmatrix(γ, parameters)
     return A
 end
 
-
 """
     collin_gamma_objective(Δγari, parameters)
 
@@ -458,19 +456,18 @@ Objective function for `collin_gamma`.
 function collin_gamma_objective(Δγari, parameters)
     (; a, β) = parameters
     Δγa = complex(Δγari[1], Δγari[2])
-    γ = im * β + Δγa / a 
+    γ = im * β + Δγa / a
     A = collinmatrix(γ, parameters)
     Anorm = A / norm(A)
     determ = det(Anorm)
-    temag = abs(Anorm[1,2])
-    tmmag = abs(Anorm[1,1])
+    temag = abs(Anorm[1, 2])
+    tmmag = abs(Anorm[1, 1])
     #penalty = penalty_fun(ratio)
     penalty = 0.0
     detobjective = abs2(determ) / norm(A)
     objective = detobjective + penalty
     return (; objective, Δγa, γ, A, penalty)
 end
-
 
 """
     rwgte10gz(a, b, f; ϵᵣ, tanδ, σ, Rq) -> (γ, Z)
@@ -613,9 +610,6 @@ function rwgte10gz(
     return (γ, Z)
 end
 
-
-
-
 """
     rwggz(p, m, n, a, b, f; ϵᵣ=1.0, tanδ=0.0, σ=Inf, Rq=0.0) -> (γ, Z)
     rwggz(p, m, n, a, b, f; epsr=1.0, tandel=0.0, sigma=Inf, Rq=0.0) -> (γ, Z)
@@ -717,7 +711,7 @@ Function defining a NonLinearProblem whose solution provides rigorously correct 
 ## Reference: 
 
 """
-function nlsolvedkxadkyb(Δs::AbstractVector,  params)
+function nlsolvedkxadkyb(Δs::AbstractVector, params)
     Δkxa = complex(Δs[1], Δs[2])
     Δkyb = complex(Δs[3], Δs[4])
     (; m, n, k, a, b, ηwn) = params
@@ -726,12 +720,14 @@ function nlsolvedkxadkyb(Δs::AbstractVector,  params)
     kyb = n * π + Δkyb
     ky = kyb / b
     kρ² = kx^2 + ky^2
-    sux, cux = sincos((kxa + m*π) / 2)
-    suy, cuy = sincos((kyb + n*π) / 2)
+    sux, cux = sincos((kxa + m * π) / 2)
+    suy, cuy = sincos((kyb + n * π) / 2)
     kz = sqrt(k^2 - kρ²)
 
-    eq1 = (im * k * ky * suy / kρ² + ηwn * cuy) * (im * ηwn * k * ky * cuy / kρ² - suy) - (kz * kx / kρ²)^2 * ηwn * cuy * suy
-    eq2 = (im * k * kx * sux / kρ² + ηwn * cux) * (im * ηwn * k * kx * cux / kρ² - sux) - (kz * ky / kρ²)^2 * ηwn * cux * sux
+    eq1 = (im * k * ky * suy / kρ² + ηwn * cuy) * (im * ηwn * k * ky * cuy / kρ² - suy) -
+          (kz * kx / kρ²)^2 * ηwn * cuy * suy
+    eq2 = (im * k * kx * sux / kρ² + ηwn * cux) * (im * ηwn * k * kx * cux / kρ² - sux) -
+          (kz * ky / kρ²)^2 * ηwn * cux * sux
     return @SVector [real(eq1), imag(eq1), real(eq2), imag(eq2)]
 end
 
@@ -761,19 +757,21 @@ kx and ky values of a rectangular waveguide.
 [2] P. Simon, "Notes on Attenuation in Circular and Rectangular Waveguides", Eqs (7a) and (7b).
 
 """
-function nlsolvekxakyb(rikakbs::AbstractVector,  params)
+function nlsolvekxakyb(rikakbs::AbstractVector, params)
     kxa = complex(rikakbs[1], rikakbs[2])
     kyb = complex(rikakbs[3], rikakbs[4])
     (; m, n, k, a, b, ηwn) = params
     kx = kxa / a
     ky = kyb / b
     kρ² = kx^2 + ky^2
-    sux, cux = sincos((kxa + m*π) / 2)
-    suy, cuy = sincos((kyb + n*π) / 2)
+    sux, cux = sincos((kxa + m * π) / 2)
+    suy, cuy = sincos((kyb + n * π) / 2)
     kz = sqrt(k^2 - kρ²)
 
-    eq1 = (im * k * ky * suy / kρ² + ηwn * cuy) * (im * ηwn * k * ky * cuy / kρ² - suy) - (kz * kx / kρ²)^2 * ηwn * cuy * suy
-    eq2 = (im * k * kx * sux / kρ² + ηwn * cux) * (im * ηwn * k * kx * cux / kρ² - sux) - (kz * ky / kρ²)^2 * ηwn * cux * sux
+    eq1 = (im * k * ky * suy / kρ² + ηwn * cuy) * (im * ηwn * k * ky * cuy / kρ² - suy) -
+          (kz * kx / kρ²)^2 * ηwn * cuy * suy
+    eq2 = (im * k * kx * sux / kρ² + ηwn * cux) * (im * ηwn * k * kx * cux / kρ² - sux) -
+          (kz * ky / kρ²)^2 * ηwn * cux * sux
     #eq1 *= 1e8
     #eq2 *= 1e8
     return @SVector [real(eq1), imag(eq1), real(eq2), imag(eq2)]
@@ -816,19 +814,18 @@ function e0h0mat(kxa, kyb, params)
     hy0 = ky * k / kρ²
 
     mat = zeros(ComplexF64, 4, 2)
-    mat[1,1] = -im * ηwn * hx0 * cux + sux
-    mat[2,1] = im * hyz * sux
-    mat[3,1] = im * ηwn * hy0 * cuy - suy
-    mat[4,1] =  im * hxz * suy
+    mat[1, 1] = -im * ηwn * hx0 * cux + sux
+    mat[2, 1] = im * hyz * sux
+    mat[3, 1] = im * ηwn * hy0 * cuy - suy
+    mat[4, 1] = im * hxz * suy
 
-    mat[1,2] = im * ηwn * hyz * cux
-    mat[2,2] = im * hx0 * sux + ηwn * cux
-    mat[3,2] = im * ηwn * hxz * cuy
-    mat[4,2] = -im * hy0 * suy - ηwn * cuy
+    mat[1, 2] = im * ηwn * hyz * cux
+    mat[2, 2] = im * hx0 * sux + ηwn * cux
+    mat[3, 2] = im * ηwn * hxz * cuy
+    mat[4, 2] = -im * hy0 * suy - ηwn * cuy
 
     return mat
 end
-
 
 """
     compute_As_kxakybs(FGHz, rwg, mode_params; iterate=false)
@@ -859,9 +856,9 @@ end
 - [1] Yeap, Kim Ho, et al. "Attenuation in circular and rectangular waveguides." Electromagnetics 37.3 (2017): 171-184.
 - [2] Yeap, Kim Ho, et al. "Attenuation in rectangular waveguides with finite conductivity walls." Radioengineering 20.2 (2011).
 """
-function compute_As_kxakybs(FGHz::Real, rwg::RWG, mode_params; iterate=false)
+function compute_As_kxakybs(FGHz::Real, rwg::RWG, mode_params; iterate = false)
     (; a, b, σ, Rq) = rwg
-    As = [zeros(ComplexF64, 4,2) for _ in 1:4]
+    As = [zeros(ComplexF64, 4, 2) for _ in 1:4]
     kxakybs = [(zero(ComplexF64), zero(ComplexF64)) for _ in 1:4]
     (; m, n, p) = mode_params
     fhz = FGHz * 1e9
@@ -872,8 +869,8 @@ function compute_As_kxakybs(FGHz::Real, rwg::RWG, mode_params; iterate=false)
         acm = a * 100
         bcm = b * 100
         ΔTx = im * (2.62e-6 / acm^2)
-        ΔTy = im *  (5.2e-7 / bcm^2)
-    else 
+        ΔTy = im * (5.2e-7 / bcm^2)
+    else
         ΔTx = ΔTy = zero(ComplexF64)
     end
     if m > 0
@@ -898,22 +895,24 @@ function compute_As_kxakybs(FGHz::Real, rwg::RWG, mode_params; iterate=false)
     end
     isnothing(modei) && error("Mode not found in rwg.modes")
 
-    for (case, δs) in enumerate(((δx1,δy1), (δx2,δy1), (δx1,δy2), (δx2,δy2)))
+    for (case, δs) in enumerate(((δx1, δy1), (δx2, δy1), (δx1, δy2), (δx2, δy2)))
         δx, δy = δs
         Δkxa = 2 * δx
         Δkyb = 2 * δy
         Δs0 = @SVector[real(Δkxa), imag(Δkxa), real(Δkyb), imag(Δkyb)]
         if iterate
             prob = snls.NonlinearProblem(nlsolvedkxadkyb, Δs0, params)
-            sol = snls.solve(prob, snls.SimpleNewtonRaphson(autodiff=snls.AutoFiniteDiff()))
-            snls.SciMLBase.successful_retcode(sol) || error("Failed nonlinear solve for case $case")
+            sol = snls.solve(
+                prob, snls.SimpleNewtonRaphson(autodiff = snls.AutoFiniteDiff()))
+            snls.SciMLBase.successful_retcode(sol) ||
+                error("Failed nonlinear solve for case $case")
             Δs = sol.u
         else
             Δs = Δs0
         end
         Δkxa = complex(Δs[1], Δs[2])
         Δkyb = complex(Δs[3], Δs[4])
-        kxa = m * π + Δkxa 
+        kxa = m * π + Δkxa
         kyb = n * π + Δkyb
         kxakybs[case] = (kxa, kyb)
         A = WaveguideModes.e0h0mat(kxa, kyb, params)
@@ -921,8 +920,6 @@ function compute_As_kxakybs(FGHz::Real, rwg::RWG, mode_params; iterate=false)
     end
     return As, kxakybs
 end
-
-
 
 """
     rwg_modes(a, b, f; nmodes=10, ϵᵣ=1.0, tanδ=0.0, σ=Inf*u"S/m", Rq=0.0u"m") -> modedata
