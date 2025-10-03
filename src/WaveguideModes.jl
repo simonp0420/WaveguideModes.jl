@@ -1,5 +1,6 @@
 module WaveguideModes
 
+using LinearAlgebra: det, norm, svd
 using Unitful: Unitful, @u_str
 using MetalSurfaceImpedance: Zsurface, effective_conductivity
 using Printf: @printf
@@ -7,9 +8,14 @@ using Accessors: @set, @reset
 using PrettyTables: pretty_table, ft_printf, tf_unicode_rounded, tf_html_default,
                     HtmlTableFormat
 using AbstractPlutoDingetjes: is_inside_pluto
+using StaticArrays: @SVector, @SMatrix
+using SimpleNonlinearSolve: SimpleNonlinearSolve as snls
+using PRIMA: bobyqa
 
 export @u_str
-export RWG, RWGMode, TE, TM, lookup_rwg, rwgte10gz, rwg_modes, rwg_modetable
+export TE, TM, setup_modes!,
+       RWG, RWGMode, lookup_rwg, rwgte10gz, rwg_modes, rwg_modetable,
+       CWG, CWGMode
 
 using PhysicalConstants: PhysicalConstants
 const c₀ = Unitful.ustrip(Float64, u"m/s", PhysicalConstants.CODATA2022.c_0)
@@ -51,7 +57,9 @@ abstract type HomogeneousMetalPipeMode <: MetalPipeMode end
 @enum TETM::Bool TE=true TM=false
 
 isTE(mode::HomogeneousMetalPipeMode) = mode.p == TE
+isTE(p::TETM) = p == TE
 isTM(mode::HomogeneousMetalPipeMode) = mode.p == TM
+isTM(p::TETM) = p == TM
 
 """
     update(mode::HomogeneousMetalPipeMode; f::Real, γ::Complex, Z::Complex) -> mode
@@ -87,5 +95,7 @@ function is_html_environment()
 end
 
 include("RWGModes.jl")
+
+include("CWGModes.jl")
 
 end # module
