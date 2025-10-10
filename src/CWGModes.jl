@@ -86,7 +86,7 @@ end
 
 
 """
-    setup_modes!(wg::CWG, f::Real, nmodes::Integer=length(c.modes); ms=1)
+    setup_modes!(wg::CWG, f::Real, nmodes::Integer=length(c.modes); ms=1, method=:yeap)
 
 Set up the modes for a uniform circular waveguide.
 
@@ -100,9 +100,22 @@ Set up the modes for a uniform circular waveguide.
 
 ## Keyword Arguments
 - `ms`: (optional) An `Int` or `AbstractVector{Int}` denoting the modal `m` values (the azimuthal mode numbers)
-  to use when adding modes to the waveguide.  Ignored if `wg.modes` is empty. Values must be nonnegative.
+  to use when adding modes to the waveguide.  Ignored if `wg.modes` is nonempty. Values must be nonnegative.
+- `method::Symbol`:  `:yeap` (default), `:abe`, or `:ploss` denoting whether to use method of Reference [1], [2],
+  or [3] respectively.
+
+## References
+[1] K. H. Yeap et al: "Attenuation in Circular and Rectangular Waveguides", Electromagnetics, Vol. 37, No. 3,
+2017, pp. 171-184.
+
+[2] T. Abe and Y. Yamaguchi, "Propagation Constant Below Cutoff Frequency in a Circular Waveguide with
+Conducting Medium", IEEE Trans. MTT, Vol. MTT-29, no. 7, July 1981, pp. 707-712.
+
+[3] R. Collin, **Field Theory of Guided Waves, 2cd Edition**, Table 5.5.
 """
-function setup_modes!(wg::CWG, f::Real, nmodes::Integer = length(wg.modes); ms::Union{Int,AbstractVector{Int}}=1)
+function setup_modes!(wg::CWG, f::Real, nmodes::Integer = length(wg.modes); 
+                      ms::Union{Int,AbstractVector{Int}}=1,
+                      method::Symbol=:yeap)
     (; a, σ, Rq, ϵᵣ, tanδ) = wg
     if isempty(wg.modes)
         nmodes ≤ 0 && throw(ArgumentError("nmodes must be > 0"))
@@ -128,7 +141,15 @@ function setup_modes!(wg::CWG, f::Real, nmodes::Integer = length(wg.modes); ms::
     for (q, mode) in pairs(wg.modes)
         (; m, p, kco) = mode
         umn = kco * a 
-        βa = cwgkza(p, m, umn, ka, Zsoη)
+        if method == :yeap
+            βa = cwgkza_yeap(p, m, umn, ka, Zsoη)
+        elseif method == :abe
+            βa = cwgkza_abe(p, m, umn, ka, Zsoη)
+        elseif method == :ploss
+            βa = cwgkza_ploss(p, m, umn, ka, Zsoη)
+        else
+            Throw(ArgumentError("Unknown method: $method"))
+        end
         β = βa / a
         γ = im * β
         if p == TE
@@ -143,44 +164,135 @@ end
 
 
 """
-    cwgkza(p::TETM, m, umn, ka, Zsoη)
+    cwgkza_yeap(p::TETM, m, umn, ka, Zsn)
 
 Compute product of z-directed complex wavenumber kz and waveguide radius a for a circular waveguide.
 
 ## Arguments
 - `p::TETM`: Mode type (`TE` or `TM`).
 - `m::Integer`: Mode index for variation in ϕ direction.
-- `umn::Float64`: Equal to kco * a, where kco is the free-space cutoff wavenumber for the mode of interest. (For
+- `umn::Float64`: Equal to kco * a, where kco is the cutoff wavenumber for the mode of interest. (For
   circular guides this is a zero of the Bessel function J_m or a zero of its derivative).
 - `ka::ComplexF64`: Product of wavenumber (for the dielectric filling the guide) times the waveguide radius.
-- `Zsoη::ComplexF64`: The ratio of the metal wall surface impedance to the intrinsic impedance of the dielectric
+- `Zsn::ComplexF64`: The ratio of the metal wall surface impedance to the intrinsic impedance of the dielectric
   material filling the waveguide.
 
 ## Return Value
-- 'kza::Complex64': The z-directed wavenumber [1/m] accurately accounting for the effect of wall finite conductivity
-  and surface roughness.
+- 'kza::Complex64': Product of the waveguide radius with the z-directed wavenumber [1/m] including both
+  propagation (imaginary part) and attenuation (real part).
 
-## References
-- [1] K. H. Yeap et al: "Attenuation in Lossy Circular Waveguides", ACES Journal, Vol. 34, No. 1, January 2019, pp. 43-48.
-  """
-function cwgkza(p::TETM, m::Integer, umn::Float64, ka::ComplexF64, Zsoη::ComplexF64)
-    umn² = umn * umn
-    if iszero(Zsoη)
-        kza = mysqrt(ka^2 - umn²)
+## Reference
+K. H. Yeap et al: "Attenuation in Circular and Rectangular Waveguides", Electromagnetics, Vol. 37, No. 3,
+2017, pp. 171-184
+"""
+function cwgkza_yeap(p::TETM, m::Integer, umn::Float64, ka::ComplexF64, Zsn::ComplexF64)
+    kra = umn
+    kra² = kra^2
+    ka² = ka^2
+    if iszero(Zsn)
+        kza = mysqrt(ka² - kra²)
     else
-        umn³ = umn² * umn 
+        kza = sqrt(ka² - kra²)
+        f1 = kra / (2 * ka)
+        zsum = inv(Zsn) + Zsn
+        root = sqrt(4 + (2m * kza / kra^2)^2 - zsum^2)
         if p == TE
-            umn⁴ = umn³ * umn
-            m² = m * m
-            num = umn⁴ + m² * (ka^2 - umn²)
-            den = im * ka * umn³ * (Zsoη + inv(Zsoη)) * ((m / umn)^2 - 1)
+            δ = f1 * (-im * zsum + root) / ((m / umn)^2 - 1)
         else
-            num = im * (ka * umn)^2
-            den = ka * umn³ * (Zsoη + inv(Zsoη))
+            δ = inv(-f1 * (im * zsum + root))
         end
-        δ = num / den
         kza = mysqrt(ka^2 - (umn + δ)^2)
     end
+    return kza
+end
+
+
+"""
+    cwgkza_abe(p::TETM, m, umn, ka, Zsn)
+
+Compute product of z-directed complex wavenumber kz and waveguide radius a for a circular waveguide.
+
+## Arguments
+- `p::TETM`: Mode type (`TE` or `TM`).
+- `m::Integer`: Mode index for variation in ϕ direction.
+- `umn::Float64`: Equal to kco * a, where kco is the cutoff wavenumber for the mode of interest. (For
+  circular guides this is a zero of the Bessel function J_m or a zero of its derivative).
+- `ka::ComplexF64`: Product of wavenumber (for the dielectric filling the guide) times the waveguide radius.
+- `Zsn::ComplexF64`: The ratio of the metal wall surface impedance to the intrinsic impedance of the dielectric
+  material filling the waveguide.
+
+## Return Value
+- 'kza::Complex64': Product of the waveguide radius with the z-directed wavenumber [1/m] including both
+  propagation (imaginary part) and attenuation (real part).
+
+## Reference
+T. Abe and Y. Yamaguchi, "Propagation Constant Below Cutoff Frequency in a Circular Waveguide with
+Conducting Medium", IEEE Trans. MTT, Vol. MTT-29, no. 7, July 1981, pp. 707-712.
+"""
+function cwgkza_abe(p::TETM, m::Integer, umn::Float64, ka::ComplexF64, Zsn::ComplexF64)
+    umn² = umn^2
+    ka² = ka^2
+    if iszero(Zsn)
+        kza = mysqrt(ka² - umn²)
+    else
+        h0a² = ka² - umn²
+        h0a = sqrt(h0a²)
+        kea = ka / Zsn
+        v = sqrt(kea^2 - h0a²)
+        m² = m^2
+        if p == TE
+            #Δu = (m² * (ka² - umn²) + umn² * umn²) / (-im * umn * v * (m² - umn²)) # Eq. (7)
+            kea² = kea^2
+            Δu = -im * ((m * h0a * v)^2 + (umn²)^2 * kea²) / (v * umn * (ka² + kea^2) * (m² - umn²))
+        else
+            Δu = - ka² * umn * v / (2v * ka² + im * umn² * (ka² + kea^2))
+        end
+        γza = mysqrt((umn + Δu)^2 - ka^2)
+        kza = -im * γza
+    end
+    return kza
+end
+
+
+"""
+    cwgkza_ploss(p::TETM, m, umn, ka, Zsn)
+
+Compute product of z-directed complex wavenumber kz and waveguide radius a for a circular waveguide. 
+Estimate the attenuation for modes above cutoff using the power loss method.
+
+## Arguments
+- `p::TETM`: Mode type (`TE` or `TM`).
+- `m::Integer`: Mode index for variation in ϕ direction.
+- `umn::Float64`: Equal to kco * a, where kco is the cutoff wavenumber for the mode of interest. (For
+  circular guides this is a zero of the Bessel function J_m or a zero of its derivative).
+- `ka::ComplexF64`: Product of wavenumber (for the dielectric filling the guide) times the waveguide radius.
+- `Zsn::ComplexF64`: The ratio of the metal wall surface impedance to the intrinsic impedance of the dielectric
+  material filling the waveguide.
+
+## Return Value
+- 'kza::Complex64': Product of the waveguide radius with the z-directed wavenumber [1/m] including both
+  propagation (imaginary part) and attenuation (real part).
+
+## Reference
+R. Collin, **Field Theory of Guided Waves, 2cd Edition**, Table 5.5.
+"""
+function cwgkza_ploss(p::TETM, m::Integer, umn::Float64, ka::ComplexF64, Zsn::ComplexF64)
+    Rsn = real(Zsn)
+    umn² = umn^2
+    ka² = ka^2
+    γa = mysqrt(umn² - ka²)
+    if iszero(Rsn) || real(ka) ≤ umn
+        αca = 0.0
+    else
+        kcook² = (umn / real(ka))^2
+        αca = Rsn / sqrt(1 - kcook²)
+        if p == TE
+            m² = m^2
+            αca *= kcook² + m² / (umn² - m²)
+        end
+    end
+    γa += αca
+    kza = -im * γa
     return kza
 end
 
