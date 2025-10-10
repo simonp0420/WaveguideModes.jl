@@ -11,6 +11,7 @@ using AbstractPlutoDingetjes: is_inside_pluto
 using StaticArrays: @SVector, @SMatrix
 using SimpleNonlinearSolve: SimpleNonlinearSolve as snls
 using PRIMA: bobyqa
+using FunctionZeros: besselj_zero, besselj_deriv_zero
 
 export @u_str
 export TE, TM, setup_modes!,
