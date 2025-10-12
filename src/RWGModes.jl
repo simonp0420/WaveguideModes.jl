@@ -1035,7 +1035,6 @@ function rwg_modes(
 
     modedata = Matrix{Any}(undef, nmodes, 6)
 
-    np2dB = 20 * log10(exp(1)) # Convert neper to dB
     cover2π = c₀ / (sqrt(ϵᵣ) * 2π)
     for (i, mode) in pairs(wg.modes)
         λgm = 2π / imag(mode.γ)
