@@ -11,17 +11,21 @@ using AbstractPlutoDingetjes: is_inside_pluto
 using StaticArrays: @SVector, @SMatrix
 using SimpleNonlinearSolve: SimpleNonlinearSolve as snls
 using PRIMA: bobyqa
+using FunctionZeros: besselj_zero, besselj_deriv_zero
 
 export @u_str
 export TE, TM, setup_modes!,
        RWG, RWGMode, lookup_rwg, rwgte10gz, rwg_modes, rwg_modetable,
-       CWG, CWGMode
+       CWG, CWGMode, cwg_modes, cwg_modetable
 
 using PhysicalConstants: PhysicalConstants
 const c₀ = Unitful.ustrip(Float64, u"m/s", PhysicalConstants.CODATA2022.c_0)
 const ϵ₀ = Unitful.ustrip(Float64, u"F/m", PhysicalConstants.CODATA2022.ε_0)
 const μ₀ = Unitful.ustrip(Float64, u"H/m", PhysicalConstants.CODATA2022.μ_0)
 const η₀ = Unitful.ustrip(Float64, u"Ω", PhysicalConstants.CODATA2022.Z_0)
+
+const np2dB = 20 * log10(exp(1)) # Convert neper to dB
+
 
 abstract type Waveguide end
 abstract type MetallicWaveguide <: Waveguide end

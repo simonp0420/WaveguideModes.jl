@@ -102,19 +102,36 @@ function RWG(wgspec::AbstractString; kwargs...)
 end
 
 """
-    setup_modes!(wg::RWG, f::Real, nmodes::Integer=length(c.modes))
+    setup_modes!(wg::RWG, f::Real, nmodes::Integer=length(c.modes); method=:auto)
 
 Set up the modes for a uniform rectangular waveguide.
 
-## Arguments
+## Positional Arguments
 - `wg`: A `RWG` instance.  If `wg.modes` is empty, then it will be appended to `length(n)`.  After this, or
   if it is already allocated, each mode in the vector will be replaced by one with updated values of `γ` and 
   `Z` corresponding to the frequency `f`.
 - `f`: The frequency [Hz].
 - `nmodes`: (optional) The number of modes to append to `wg.modes` if it is empty.  If `wg.modes` is nonempty, then
   `nmodes` must be equal to `length(wg.modes)`.
+## Keyword Arguments
+- `method::Symbol`: (optional)  Either `:auto` (the default) or `:ploss`.  If `:auto`, then 
+  for the TE10 and TE01 modes, the updated propagation constant is computed using the formulas from Reference 
+  [1], while for all other modes, the variational approach of Collin [2] pp. 350-354 is used.  If `:ploss`,
+  then the attenuation for modes above cutoff is calculated using the power loss method (Table 5.2 of [2]).
+  Note that the power loss method is not valid for degenerate modes (i.e. modes where both `m` and `n` are
+  nonzero).  It is included here for reference only. `:auto` should be used when an accurate answer is desired.
+
+## Return Value
+- `wg`: The updated `RWG` instance is returned.  
+
+## References
+[1] Lomakin, Konstantin, Gerald Gold, and Klaus Helmreich. "Analytical waveguide model precisely
+predicting loss and delay including surface roughness." IEEE Trans. Microwave Theory Tech., Vol 66,
+no. 6 (2018): 2649-2662.
+
+[2] R. E. Collin, **Field Theory of Guided Waves** 2cd Edition, IEEE Press, 1991, Table 5.2, p. 351.
 """
-function setup_modes!(wg::RWG, f::Real, nmodes::Integer = length(wg.modes))
+function setup_modes!(wg::RWG, f::Real, nmodes::Integer = length(wg.modes); method::Symbol = :auto)
     (; a, b, σ, Rq, ϵᵣ, tanδ) = wg
     if isempty(wg.modes)
         nmodes ≤ 0 && throw(ArgumentError("nmodes must be > 0"))
@@ -147,20 +164,31 @@ function setup_modes!(wg::RWG, f::Real, nmodes::Integer = length(wg.modes))
     local γte, γtm # So we can reuse old values within the loop below
     for (q, mode) in pairs(wg.modes)
         (; m, n, p, kco) = mode
-
-        # For TE10 or TE01, use Lomakin 2018
-        if (p, m, n) == (TE, 1, 0)
-            (γ, Z) = rwgte10gz(a, b, f; ϵᵣ, tanδ, σ, Rq)
-            Z /= η₀
-        elseif (p, m, n) == (TE, 0, 1)
-            (γ, Z) = rwgte10gz(b, a, f; ϵᵣ, tanδ, σ, Rq)
-            Z /= η₀
-        else
-            # For all other modes use Collin's variational approach:
-            (m, n) ≠ mnold && ((; γte, γtm) = collin_gammas(a, b, m, n, k, Zs / η))
-            γ = isTE(p) ? γte : γtm 
+        if method == :auto
+            # For TE10 or TE01, use Lomakin 2018
+            if (p, m, n) == (TE, 1, 0)
+                (γ, Z) = rwgte10gz(a, b, f; ϵᵣ, tanδ, σ, Rq)
+                Z /= η₀
+            elseif (p, m, n) == (TE, 0, 1)
+                (γ, Z) = rwgte10gz(b, a, f; ϵᵣ, tanδ, σ, Rq)
+                Z /= η₀
+            else
+                # For all other modes use Collin's variational approach:
+                (m, n) ≠ mnold && ((; γte, γtm) = collin_gammas(a, b, m, n, k, Zs / η))
+                γ = isTE(p) ? γte : γtm 
+                β = -im * γ
+                Z = isTE(p) ? (k / β * ηnorm) : (β / k * ηnorm)
+            end
+        elseif method == :ploss
+            γ = mysqrt(kco^2 - k²)
+            Rsnorm = Rs / η
+            params = (; a, b, m, n, p, kco)
+            αc = alphaploss(params, k, Rsnorm)
+            γ += αc
             β = -im * γ
             Z = isTE(p) ? (k / β * ηnorm) : (β / k * ηnorm)
+        else
+            throw(ArgumentError("Unknown method: $method"))
         end
         wg.modes[q] = update(mode; f, γ, Z)
         mnold = (m, n)
@@ -1007,7 +1035,6 @@ function rwg_modes(
 
     modedata = Matrix{Any}(undef, nmodes, 6)
 
-    np2dB = 20 * log10(exp(1)) # Convert neper to dB
     cover2π = c₀ / (sqrt(ϵᵣ) * 2π)
     for (i, mode) in pairs(wg.modes)
         λgm = 2π / imag(mode.γ)
