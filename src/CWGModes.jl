@@ -393,7 +393,7 @@ end
 
 
 """
-    cwg_modetable(a, frequency; kwargs...)
+    cwg_modetable(; a, f; kwargs...)
 
 Pretty-print a table of circular waveguide mode properties: cutoff frequency, guide wavelength, and attenuation constant.
 
@@ -407,15 +407,15 @@ perturbational formulas are used in conjunction with the Gradient method to dete
 Note: This function is intended for interactive use.  For programmatic use, see `cwg_modes`.  
 The table is printed to the user's console using the `PrettyTables` package.  
 
-## Required Positional Arguments
+## Required Keyword Arguments
 - `a`: The waveguide inner radius as any `Unitful` length quantity, e.g. `a=0.8128u"cm"`, `a=320u"mil"`, 
   or `a=0.320u"inch"`.
-- `frequency`: The frequency expressed as a `Unitful` quantity with dimensions of inverse time.  Examples: `2.35u"GHz"`,
+- `f`: The frequency expressed as a `Unitful` quantity with dimensions of inverse time.  Examples: `2.35u"GHz"`,
   `2350u"MHz"`, `2.35e9u"Hz"`, etc.
 
 ## Optional Keyword Arguments
 - `ms`: An `Int` or `AbstractVector{Int}` denoting the modal `m` values (the azimuthal mode numbers)
-  to use when adding modes to the waveguide. Values must be nonnegative. Defaults to `1:20`.
+  to use when adding modes to the waveguide. Values must be nonnegative. Defaults to `1:99`.
 - `length_unit`:: A `Unitful:Units` object with dimension of length. Defaults to the units used for `a`. 
   The table produced as output will print values in the "guide wavelength" column using this unit; similarly
   the attenuation column will use units of dB/`length_unit`.
@@ -434,10 +434,10 @@ The table is printed to the user's console using the `PrettyTables` package.
 - [2] K. H. Yeap et al: "Attenuation in Circular and Rectangular Waveguides", **Electromagnetics**, Vol. 37, No. 3,
   2017, pp. 171-184.
 """
-function cwg_modetable(
+function cwg_modetable(;
         a::Unitful.Quantity{<:Real, Unitful.dimension(u"m")},
-        f::Unitful.Quantity{<:Real, Unitful.dimension(u"Hz")};
-        ms::Union{Int, AbstractVector{Int}} = 1:20,
+        f::Unitful.Quantity{<:Real, Unitful.dimension(u"Hz")},
+        ms::Union{Int, AbstractVector{Int}} = 0:99,
         nmodes::Int = 10,
         ϵᵣ::Real = 1.0,
         epsr::Real = 1.0,
@@ -456,54 +456,12 @@ function cwg_modetable(
 
     modedata = cwg_modes(a, f; ms, nmodes, ϵᵣ, tanδ, σ, Rq)
 
-    title = "CWG: a = $a, f = $f"
-    !isinf(σ) && (title *= ", σ = $σ")
-    !iszero(Rq) && (title *= ", Rq = $Rq")
-    !isone(ϵᵣ) && (title *= ", ϵᵣ = $ϵᵣ")
-    !iszero(tanδ) && (title *= ", tanδ = $tanδ")
-    maxtitlelen = 60
-    linebreak = is_html_environment() ? "<br>\n" : "\n"
-    linelen = 0
-    title2 = ""
-    for phrase in eachsplit(title, ',')
-        if linelen + length(phrase) > maxtitlelen
-            title2 = string(title2, linebreak)
-            linelen = 0
-        end
-        linelen += length(phrase)
-        title2 *= string(phrase, ",")
-    end
-    title = title2[begin:(end - 1)]
-
-    column_labels = ["Type", "m", "n", "Cutoff Freq.", "Guide Wavelength", "Attenuation"]
-    column_units = ["", "", "", "[$freq_unit]", "[$length_unit]", "[dB/$length_unit]"]
-    header = (column_labels, column_units)
-
-    if is_html_environment()
-        p = pretty_table(
-            modedata;
-            backend = Val(:html),
-            title,
-            title_alignment = :c,
-            header,
-            formatters = ft_printf(col_fmts, 1:6),
-            tf = tf_html_default
-        )
-        #Main.IJulia.display("text/html", p)
-    else
-        println()
-        p = pretty_table(
-            modedata;
-            backend = Val(:text),
-            title,
-            title_alignment = :c,
-            title_same_width_as_table = true,
-            title_autowrap = true,
-            header,
-            formatters = ft_printf(col_fmts, 1:6),
-            tf = tf_unicode_rounded
-        )
-    end
+    mdis = ms isa Integer ? [ms] : ms
+    tit = "CWG: m ∈ $mdis, a = $a, f = $f"
+    !isinf(σ) && (tit *= ", σ = $σ")
+    !iszero(Rq) && (tit *= ", Rq = $Rq")
+    !isone(ϵᵣ) && (tit *= ", ϵᵣ = $ϵᵣ")
+    !iszero(tanδ) && (tit *= ", tanδ = $tanδ")
+    display_mode_table(modedata, tit, freq_unit, length_unit, col_fmts)
     return nothing
 end
-
