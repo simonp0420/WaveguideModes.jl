@@ -393,16 +393,13 @@ end
 
 
 """
-    cwg_modetable(; a, f; kwargs...)
+    cwg_modetable(; a, f, kwargs...) -> mdt
 
-Pretty-print a table of circular waveguide mode properties: cutoff frequency, guide wavelength, and attenuation constant.
+Create a table of circular waveguide mode properties: cutoff frequency, guide wavelength, and attenuation constant.
 
 Guide wavelength and attenuation are accurately computed at frequencies below, at, or 
 above cutoff, for both smooth and rough imperfectly conducting surfaces, by combining the Gradient method
-of Reference [1] with the method of Yeap, et al. [2].
- For other modes the standard 
-perturbational formulas are used in conjunction with the Gradient method to determine effective surface impedance.  
-
+of Reference [1] with the method of Yeap, et al. [2].  
 
 Note: This function is intended for interactive use.  For programmatic use, see `cwg_modes`.  
 The table is printed to the user's console using the `PrettyTables` package.  
@@ -428,6 +425,9 @@ The table is printed to the user's console using the `PrettyTables` package.
 - `col_fmts::String = ["%s", "%i", "%i", "%#.8g", "%8.4f", "%8.4f"]`: A vector of C-style format strings
   used to format the six columns of the table.
 
+  ## Return Value
+- `mdt`: A `ModeDataTable` instance which will pretty-print automatically in the user's REPL or notebook environment.
+
 ## References
 - [1] D. N. Grujić, "Simple and Accurate Approximation of Rough Conductor Surface Impedance," 
   **IEEE Trans. Microwave Theory Tech.**, vol. 70, no. 4, pp. 2053-2059, April 2022.
@@ -446,7 +446,7 @@ function cwg_modetable(;
         σ::Unitful.Quantity{<:Real, Unitful.dimension(u"S/m")} = Inf * u"S/m",
         sigma::Unitful.Quantity{<:Real, Unitful.dimension(u"S/m")} = Inf * u"S/m",
         Rq::Unitful.Quantity{<:Real, Unitful.dimension(u"m")} = 0.0u"m",
-        col_fmts = ["%s", "%i", "%i", "%#.8g", "%8.4f", "%8.4f"],
+        colfmts = ["%s", "%i", "%i", "%#.8g", "%8.4f", "%8.4f"],
         length_unit = Unitful.unit(a))
 
     freq_unit = Unitful.unit(f)
@@ -457,11 +457,13 @@ function cwg_modetable(;
     modedata = cwg_modes(a, f; ms, nmodes, ϵᵣ, tanδ, σ, Rq)
 
     mdis = ms isa Integer ? [ms] : ms
-    tit = "CWG: m ∈ $mdis, a = $a, f = $f"
-    !isinf(σ) && (tit *= ", σ = $σ")
-    !iszero(Rq) && (tit *= ", Rq = $Rq")
-    !isone(ϵᵣ) && (tit *= ", ϵᵣ = $ϵᵣ")
-    !iszero(tanδ) && (tit *= ", tanδ = $tanδ")
-    display_mode_table(modedata, tit, freq_unit, length_unit, col_fmts)
-    return nothing
+    title = "CWG: m ∈ $mdis, a = $a, f = $f"
+    !isinf(σ) && (title *= ", σ = $σ")
+    !iszero(Rq) && (title *= ", Rq = $Rq")
+    !isone(ϵᵣ) && (title *= ", ϵᵣ = $ϵᵣ")
+    !iszero(tanδ) && (title *= ", tanδ = $tanδ")
+    coltitles = ["Type", "m", "n", "Cutoff Freq.", "Guide Wavelength", "Attenuation"]
+    colunits = ["", "", "", "[$freq_unit]", "[$length_unit]", "[dB/$length_unit]"]
+    mdt = ModeDataTable(; title, modedata, coltitles, colunits, colfmts)
+    return mdt
 end

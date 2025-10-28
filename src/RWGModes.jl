@@ -1151,9 +1151,9 @@ function lookup_rwg(wgspec::AbstractString)
 end
 
 """
-    rwg_modetable(wgspec, frequency; kwargs...)
+    rwg_modetable(wgspec; f, kwargs...) -> mdt
 
-Pretty-print a table of rectangular waveguide mode properties: cutoff frequency, guide wavelength, and attenuation constant.
+Create a table of rectangular waveguide mode properties: cutoff frequency, guide wavelength, and attenuation constant.
 
 Guide wavelength and attenuation for the TE₁₀ and TE₀₁ modes are accurately computed at frequencies below, at, or 
 above cutoff, for both smooth and rough imperfectly conducting surfaces, using the Gradient method as detailed 
@@ -1184,8 +1184,11 @@ The table is printed to the user's console using the `PrettyTables` package.
   with dimensions the same as those of `u"S/m"`.  Default value is `Inf*u"S/m"`.
 - `Rq`: The RMS surface roughness of the waveguide walls expressed as a `Unitful` quantity having dimension
   of length. Default value is `0.0u"m"`.
-- `col_fmts::String = ["%s", "%i", "%i", "%#.8g", "%8.4f", "%8.4f"]`: A vector of C-style format strings
+- `colfmts::String = ["%s", "%i", "%i", "%#.8g", "%8.4f", "%8.4f"]`: A vector of C-style format strings
   used to format the six columns of the table.
+
+## Return Value
+- `mdt`: A `ModeDataTable` instance which will pretty-print automatically in the user's REPL or notebook environment.
 """
 function rwg_modetable(wgspec::AbstractString;
         f::Unitful.Quantity{<:Real, Unitful.dimension(u"Hz")},
@@ -1216,7 +1219,7 @@ function rwg_modetable(;
         σ::Unitful.Quantity{<:Real, Unitful.dimension(u"S/m")} = Inf * u"S/m",
         sigma::Unitful.Quantity{<:Real, Unitful.dimension(u"S/m")} = Inf * u"S/m",
         Rq::Unitful.Quantity{<:Real, Unitful.dimension(u"m")} = 0.0u"m",
-        col_fmts = ["%s", "%i", "%i", "%#.8g", "%8.4f", "%8.4f"],
+        colfmts = ["%s", "%i", "%i", "%#.8g", "%8.4f", "%8.4f"],
         length_unit = Unitful.unit(a),
         wgname::AbstractString = "RWG")
     ϵᵣ = max(ϵᵣ, epsr)
@@ -1232,6 +1235,8 @@ function rwg_modetable(;
     !iszero(Rq) && (title *= ", Rq = $Rq")
     !isone(ϵᵣ) && (title *= ", ϵᵣ = $ϵᵣ")
     !iszero(tanδ) && (title *= ", tanδ = $tanδ")
-    display_mode_table(modedata, title, freq_unit, length_unit, col_fmts)
-    return nothing
+    coltitles = ["Type", "m", "n", "Cutoff Freq.", "Guide Wavelength", "Attenuation"]
+    colunits = ["", "", "", "[$freq_unit]", "[$length_unit]", "[dB/$length_unit]"]
+    mdt = ModeDataTable(; title, modedata, coltitles, colunits, colfmts)
+    return mdt
 end

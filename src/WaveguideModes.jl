@@ -79,50 +79,40 @@ function update(mode::HomogeneousMetalPipeMode; f::Real, γ::Complex, Z::Complex
 end
 
 """
-    mysqrt(x)
+    ModeDataTable <: Any
 
-Same as `sqrt` unless `sqrt(x)` is pure negative imaginary in which
-case it returns `-sqrt(x)` (i.e., positive pure imaginary).
-"""
-mysqrt(x) = sqrt(x)
-function mysqrt(z::Complex)
-    ans = sqrt(z)
-    return iszero(real(ans)) && imag(ans) < 0 ? -ans : ans
-end
+A struct containing data to be displayed for a few modes of a waveguide
 
-"""
-    is_html_environment()
-
-Returns `true` if code is running under `IJulia`, `Pluto`, or `BonitoBook` and `false` otherwise.
-"""
-function is_html_environment()
-    return (isdefined(Main, :IJulia) && Main.IJulia.inited) || is_inside_pluto() || 
-    any(t -> occursin("IJulia", t) || occursin("Bonito", t) || occursin("Pluto", t), 
-        string.(typeof.(Base.Multimedia.displays)))
-end
-
-"""
-    display_mode_table(modedata::Array, titlestr::String, freq_unit, length_unit, col_fmts)
-
-Display a mode table to the user's console, or to an HTML environment.
-
-## Positional Arguments
-- `modedata`: An array of size `(nrows,6)` containing the modal data to be output.  The columns
-  contain ["Type (TE or TM)", "m", "n", "Cutoff Freq.", "Guide Wavelength", "Attenuation"]
-- `thtlestr`: A `String` containing the table title.
-- `freq_unit`: Either a `String` or an object (such as a Unitful unit) that can be converted
-  to `String` to use as a column label for the frequency column.
-- `length_unit`: Either a `String` or an object (such as a Unitful unit) that can be converted
-  to `String` to use as a column label for the Guide Wavelength column.
-- `col_fmts`: A `Vector{String}` of length 6 containing the `@sprinf` columnar formats for the
+## Fields
+- `title`: A `String` containing the table title.
+- `modedata`: An array of size `(nrows,ncols)` containing the modal data to be output. 
+- `coltitles`: A vector of `ncols` strings containing the titles for each column.
+- `colunits`:  A vector of `ncols` strings containing the units used for each column.
+- `col_fmts`: A `Vector{String}` of length `ncols` containing the `@sprinf` columnar formats for the
   numeric entries in the table.
 """
-function display_mode_table(modedata::Array, titlestr::String, freq_unit, length_unit, col_fmts)
-    size(modedata, 2) == 6 || throw(ArgumentError("Wrong number of columns in modedata"))
+@kwdef struct ModeDataTable
+    title::String
+    modedata::Array{Any}
+    coltitles::Vector{String}
+    colunits::Vector{String}
+    colfmts::Vector{String}
+
+    function ModeDataTable(title, modedata, coltitles, colunits, colfmts)
+        ncols = size(modedata, 2)
+        length(coltitles) == ncols || error("length(coltitles) ≠ size(modedata, 2)")
+        length(colunits) == ncols || error("length(colunits) ≠ size(modedata, 2)")
+        length(colfmts) == ncols || error("length(colfmts) ≠ size(modedata, 2)")
+        return new(title, modedata, coltitles, colunits, colfmts)
+    end
+end
+
+function Base.show(io::IO, ::MIME"text/plain", mdt::ModeDataTable)
+    (;  title, modedata, coltitles, colunits, colfmts) = mdt
     maxtitlelen = 60
     title2 = String[]
     nexttline = ""
-    for phrase in eachsplit(titlestr, ',')
+    for phrase in eachsplit(title, ',')
         if length(nexttline) + length(phrase) > maxtitlelen
             push!(title2, nexttline)
             nexttline = ""
@@ -132,44 +122,66 @@ function display_mode_table(modedata::Array, titlestr::String, freq_unit, length
     push!(title2, nexttline)
     title = first(title2)
     subtitle = length(title2) > 1 ? join(title2[begin+1:end])[begin+1:end-1] : ""
-    column_labels = [["Type", "m", "n", "Cutoff Freq.", "Guide Wavelength", "Attenuation"]]
-    column_units = ["", "", "", "[$freq_unit]", "[$length_unit]", "[dB/$length_unit]"]
-    column_label_alignment = :c
-    push!(column_labels, column_units)
-    formatters = [fmt__printf(col_fmts[i], [i]) for i in 1:6]
+    column_labels = [coltitles, colunits]
+    formatters = [fmt__printf(colfmts[i], [i]) for i in 1:6]
+    println(io)
+    pretty_table(
+        io,
+        modedata;
+        style = TextTableStyle(; title = crayon"bold", subtitle = crayon"bold"),
+        backend = :text,
+        title,
+        subtitle,
+        column_labels,
+        formatters,
+    )
+end
 
-    if is_html_environment()
-
-        p = pretty_table(
-            modedata;
-            backend = :html,
-            style = HtmlTableStyle(; 
-                        title = ["font-weight" => "bold", "font-size" => "large"],
-                        subtitle = ["font-weight" => "bold", "font-size" => "large"],
-                        first_line_column_label = ["font-weight" => "bold"],
-                        column_label = ["font-weight" => "regular", "font-style" => "italic"],
-                            ),        
-            title,
-            subtitle,
-            column_labels,
-            formatters,
-        )
-
-    else
-
-        println()
-        p = pretty_table(
-            modedata;
-            style = TextTableStyle(; title = crayon"bold", subtitle = crayon"bold"),
-            backend = :text,
-            title,
-            subtitle,
-            column_labels,
-            formatters,
-            #highlighters = [TextHighlighter((d, i, j) -> iseven(i), crayon"negative")],
-        )
+function Base.show(io::IO, ::MIME"text/html", mdt::ModeDataTable)
+    (;  title, modedata, coltitles, colunits, colfmts) = mdt
+    maxtitlelen = 60
+    title2 = String[]
+    nexttline = ""
+    for phrase in eachsplit(title, ',')
+        if length(nexttline) + length(phrase) > maxtitlelen
+            push!(title2, nexttline)
+            nexttline = ""
+        end
+        nexttline *= string(phrase, ",")
     end
-    return nothing
+    push!(title2, nexttline)
+    title = first(title2)
+    subtitle = length(title2) > 1 ? join(title2[begin+1:end])[begin+1:end-1] : ""
+    column_labels = [coltitles, colunits]
+    formatters = [fmt__printf(colfmts[i], [i]) for i in 1:6]
+    pretty_table(
+        io,
+        modedata;
+        backend = :html,
+        style = HtmlTableStyle(; 
+                    title = ["font-weight" => "bold", "font-size" => "large"],
+                    subtitle = ["font-weight" => "bold", "font-size" => "large"],
+                    first_line_column_label = ["font-weight" => "bold"],
+                    column_label = ["font-weight" => "regular", "font-style" => "italic"],
+                ),        
+        title,
+        subtitle,
+        column_labels,
+        formatters,
+    )
+end
+
+
+"""
+    mysqrt(x)
+
+Same as `sqrt` unless `sqrt(x)` is pure negative imaginary in which
+case it returns `-sqrt(x)` (i.e., positive pure imaginary).
+"""
+mysqrt(x) = sqrt(x)
+function mysqrt(z::Complex)
+    ans = sqrt(z)
+    return iszero(real(ans)) && imag(ans) < 0 ? -ans : ans
 end
 
 include("RWGModes.jl")
