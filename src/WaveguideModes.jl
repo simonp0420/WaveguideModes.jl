@@ -5,13 +5,14 @@ using Unitful: Unitful, @u_str
 using MetalSurfaceImpedance: Zsurface, effective_conductivity
 using Printf: @printf
 using Accessors: @set, @reset
-using PrettyTables: pretty_table, ft_printf, tf_unicode_rounded, tf_html_default,
-                    HtmlTableFormat
+using PrettyTables: fmt__printf, HtmlTableFormat, MarkdownStyle, MarkdownTableFormat, 
+                    HtmlTableStyle, pretty_table, TextHighlighter, TextTableStyle
 using AbstractPlutoDingetjes: is_inside_pluto
 using StaticArrays: @SVector, @SMatrix
 using SimpleNonlinearSolve: SimpleNonlinearSolve as snls
 using PRIMA: bobyqa
 using FunctionZeros: besselj_zero, besselj_deriv_zero
+using Crayons: @crayon_str
 
 export @u_str
 export TE, TM, setup_modes!,
@@ -78,6 +79,100 @@ function update(mode::HomogeneousMetalPipeMode; f::Real, γ::Complex, Z::Complex
 end
 
 """
+    ModeDataTable <: Any
+
+A struct containing data to be displayed for a few modes of a waveguide
+
+## Fields
+- `title`: A `String` containing the table title.
+- `modedata`: An array of size `(nrows,ncols)` containing the modal data to be output. 
+- `coltitles`: A vector of `ncols` strings containing the titles for each column.
+- `colunits`:  A vector of `ncols` strings containing the units used for each column.
+- `col_fmts`: A `Vector{String}` of length `ncols` containing the `@sprinf` columnar formats for the
+  numeric entries in the table.
+"""
+@kwdef struct ModeDataTable
+    title::String
+    modedata::Array{Any}
+    coltitles::Vector{String}
+    colunits::Vector{String}
+    colfmts::Vector{String}
+
+    function ModeDataTable(title, modedata, coltitles, colunits, colfmts)
+        ncols = size(modedata, 2)
+        length(coltitles) == ncols || error("length(coltitles) ≠ size(modedata, 2)")
+        length(colunits) == ncols || error("length(colunits) ≠ size(modedata, 2)")
+        length(colfmts) == ncols || error("length(colfmts) ≠ size(modedata, 2)")
+        return new(title, modedata, coltitles, colunits, colfmts)
+    end
+end
+
+function Base.show(io::IO, ::MIME"text/plain", mdt::ModeDataTable)
+    (;  title, modedata, coltitles, colunits, colfmts) = mdt
+    maxtitlelen = 60
+    title2 = String[]
+    nexttline = ""
+    for phrase in eachsplit(title, ',')
+        if length(nexttline) + length(phrase) > maxtitlelen
+            push!(title2, nexttline)
+            nexttline = ""
+        end
+        nexttline *= string(phrase, ",")
+    end
+    push!(title2, nexttline)
+    title = first(title2)
+    subtitle = length(title2) > 1 ? join(title2[begin+1:end])[begin+1:end-1] : ""
+    column_labels = [coltitles, colunits]
+    formatters = [fmt__printf(colfmts[i], [i]) for i in 1:6]
+    println(io)
+    pretty_table(
+        io,
+        modedata;
+        style = TextTableStyle(; title = crayon"bold", subtitle = crayon"bold"),
+        backend = :text,
+        title,
+        subtitle,
+        column_labels,
+        formatters,
+    )
+end
+
+function Base.show(io::IO, ::MIME"text/html", mdt::ModeDataTable)
+    (;  title, modedata, coltitles, colunits, colfmts) = mdt
+    maxtitlelen = 60
+    title2 = String[]
+    nexttline = ""
+    for phrase in eachsplit(title, ',')
+        if length(nexttline) + length(phrase) > maxtitlelen
+            push!(title2, nexttline)
+            nexttline = ""
+        end
+        nexttline *= string(phrase, ",")
+    end
+    push!(title2, nexttline)
+    title = first(title2)
+    subtitle = length(title2) > 1 ? join(title2[begin+1:end])[begin+1:end-1] : ""
+    column_labels = [coltitles, colunits]
+    formatters = [fmt__printf(colfmts[i], [i]) for i in 1:6]
+    pretty_table(
+        io,
+        modedata;
+        backend = :html,
+        style = HtmlTableStyle(; 
+                    title = ["font-weight" => "bold", "font-size" => "large"],
+                    subtitle = ["font-weight" => "bold", "font-size" => "large"],
+                    first_line_column_label = ["font-weight" => "bold"],
+                    column_label = ["font-weight" => "regular", "font-style" => "italic"],
+                ),        
+        title,
+        subtitle,
+        column_labels,
+        formatters,
+    )
+end
+
+
+"""
     mysqrt(x)
 
 Same as `sqrt` unless `sqrt(x)` is pure negative imaginary in which
@@ -87,15 +182,6 @@ mysqrt(x) = sqrt(x)
 function mysqrt(z::Complex)
     ans = sqrt(z)
     return iszero(real(ans)) && imag(ans) < 0 ? -ans : ans
-end
-
-"""
-    is_html_environment()
-
-Returns `true` if code is running under `IJulia` or `Pluto`, and `false` otherwise.
-"""
-function is_html_environment()
-    return (isdefined(Main, :IJulia) && Main.IJulia.inited) || is_inside_pluto()
 end
 
 include("RWGModes.jl")

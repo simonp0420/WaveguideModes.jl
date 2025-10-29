@@ -114,22 +114,26 @@ Set up the modes for a uniform rectangular waveguide.
 - `nmodes`: (optional) The number of modes to append to `wg.modes` if it is empty.  If `wg.modes` is nonempty, then
   `nmodes` must be equal to `length(wg.modes)`.
 ## Keyword Arguments
-- `method::Symbol`: (optional)  Either `:auto` (the default) or `:ploss`.  If `:auto`, then 
+- `method::Symbol`: (optional)  Either `:auto` (the default) or `:ploss`.  These select the method used to account
+  for finite wall conductivity and surface roughness.  If `:auto`, then 
   for the TE10 and TE01 modes, the updated propagation constant is computed using the formulas from Reference 
-  [1], while for all other modes, the variational approach of Collin [2] pp. 350-354 is used.  If `:ploss`,
-  then the attenuation for modes above cutoff is calculated using the power loss method (Table 5.2 of [2]).
-  Note that the power loss method is not valid for degenerate modes (i.e. modes where both `m` and `n` are
-  nonzero).  It is included here for reference only. `:auto` should be used when an accurate answer is desired.
+  [1], while for all other modes, the variational approach of Collin [2] pp. 350-354 is used along with the 
+  Gradient method [3] to account for finite wall conductivity with surface roughness.  If `:ploss`, then for finite
+  wall conductivity the attenuation for modes above cutoff is calculated using the power loss method (Table 5.2 
+  of [2]), with an effective conductivity from [3] accounting for surface roughness. Note that the power loss method is not
+  valid for degenerate modes (i.e. modes where both `m` and `n` are nonzero).  It is included here for reference
+  only. `:auto` should be used when an accurate answer is desired.
 
 ## Return Value
 - `wg`: The updated `RWG` instance is returned.  
 
 ## References
-[1] Lomakin, Konstantin, Gerald Gold, and Klaus Helmreich. "Analytical waveguide model precisely
-predicting loss and delay including surface roughness." IEEE Trans. Microwave Theory Tech., Vol 66,
-no. 6 (2018): 2649-2662.
-
-[2] R. E. Collin, **Field Theory of Guided Waves** 2cd Edition, IEEE Press, 1991, Table 5.2, p. 351.
+- [1] Lomakin, Konstantin, Gerald Gold, and Klaus Helmreich. "Analytical waveguide model precisely
+  predicting loss and delay including surface roughness." IEEE Trans. Microwave Theory Tech., Vol 66,
+  no. 6 (2018): 2649-2662.
+- [2] R. E. Collin, **Field Theory of Guided Waves** 2cd Edition, IEEE Press, 1991, Table 5.2, p. 351.
+- [3] D. N. Grujić, "Simple and Accurate Approximation of Rough Conductor Surface Impedance," 
+  **IEEE Trans. Microwave Theory Tech.**, vol. 70, no. 4, pp. 2053-2059, April 2022.
 """
 function setup_modes!(wg::RWG, f::Real, nmodes::Integer = length(wg.modes); method::Symbol = :auto)
     (; a, b, σ, Rq, ϵᵣ, tanδ) = wg
@@ -164,31 +168,37 @@ function setup_modes!(wg::RWG, f::Real, nmodes::Integer = length(wg.modes); meth
     local γte, γtm # So we can reuse old values within the loop below
     for (q, mode) in pairs(wg.modes)
         (; m, n, p, kco) = mode
-        if method == :auto
-            # For TE10 or TE01, use Lomakin 2018
-            if (p, m, n) == (TE, 1, 0)
-                (γ, Z) = rwgte10gz(a, b, f; ϵᵣ, tanδ, σ, Rq)
-                Z /= η₀
-            elseif (p, m, n) == (TE, 0, 1)
-                (γ, Z) = rwgte10gz(b, a, f; ϵᵣ, tanδ, σ, Rq)
-                Z /= η₀
-            else
-                # For all other modes use Collin's variational approach:
-                (m, n) ≠ mnold && ((; γte, γtm) = collin_gammas(a, b, m, n, k, Zs / η))
-                γ = isTE(p) ? γte : γtm 
-                β = -im * γ
-                Z = isTE(p) ? (k / β * ηnorm) : (β / k * ηnorm)
-            end
-        elseif method == :ploss
+        if iszero(Rs) || (!any(iszero, (m,n)) && real(k) ≤ kco)
             γ = mysqrt(kco^2 - k²)
-            Rsnorm = Rs / η
-            params = (; a, b, m, n, p, kco)
-            αc = alphaploss(params, k, Rsnorm)
-            γ += αc
             β = -im * γ
             Z = isTE(p) ? (k / β * ηnorm) : (β / k * ηnorm)
         else
-            throw(ArgumentError("Unknown method: $method"))
+            if method == :auto
+                # For TE10 or TE01, use Lomakin 2018
+                if (p, m, n) == (TE, 1, 0)
+                    (γ, Z) = rwgte10gz(a, b, f; ϵᵣ, tanδ, σ, Rq)
+                    Z /= η₀
+                elseif (p, m, n) == (TE, 0, 1)
+                    (γ, Z) = rwgte10gz(b, a, f; ϵᵣ, tanδ, σ, Rq)
+                    Z /= η₀
+                else
+                    # For all other modes use Collin's variational approach:
+                    (m, n) ≠ mnold && ((; γte, γtm) = collin_gammas(a, b, m, n, k, Zs / η))
+                    γ = isTE(p) ? γte : γtm 
+                    β = -im * γ
+                    Z = isTE(p) ? (k / β * ηnorm) : (β / k * ηnorm)
+                end
+            elseif method == :ploss
+                γ = mysqrt(kco^2 - k²)
+                Rsnorm = Rs / η
+                params = (; a, b, m, n, p, kco)
+                αc = alphaploss(params, k, Rsnorm)
+                γ += αc
+                β = -im * γ
+                Z = isTE(p) ? (k / β * ηnorm) : (β / k * ηnorm)
+            else
+                throw(ArgumentError("Unknown method: $method"))
+            end
         end
         wg.modes[q] = update(mode; f, γ, Z)
         mnold = (m, n)
@@ -365,7 +375,7 @@ function collin_gammas(a::Real, b::Real, m::Integer, n::Integer, k, Zsnorm)
     αpl = alphaploss((; a, b, p = TE, m, n, kco), k, real(Zsnorm))
     if real(k) > kco
         nsamples = 500
-        αa_max = 3 * αpl * a
+        αa_max = 4 * αpl * a
         αas = range(0, αa_max, length = nsamples)
         i1 = i2 = 0 # Initialize the locations of minima in αas
         dmag2_im1 = dmag2_im2 = -Inf # Initialize previous two results
@@ -384,14 +394,20 @@ function collin_gammas(a::Real, b::Real, m::Integer, n::Integer, k, Zsnorm)
             end
             dmag2_im1, dmag2_im2 = dmag2, dmag2_im1 # Update prev. results
         end
+        if !iszero(i1) && iszero(i2)
+            i2 = i1 + 1 # Only a single minimum found
+        end
         any(iszero, (i1, i2)) && error("Got a zero: i1 = $i1, i2 = $i2")
+        αa_spread = max(αas[i2] - αas[i1], 4 * (αas[2] - αas[1]))
+
     else
         # At or below cutoff.  Can only find a single solution here (typ. TM)
-        i1 = i2 = 1
+        i1 = 1
+        i2 = 2
+        αas = range(0.0,0.0,2)
+        αa_spread = 1e-4
     end
     # Now polish the minima
-    αa_spread = αas[i2] - αas[i1]
-    iszero(αa_spread) && (αa_spread = 1e-4) # At or below cutoff
     local data1, data2
     for i in (i1, i2)
         αa = αas[i]
@@ -416,22 +432,16 @@ function collin_gammas(a::Real, b::Real, m::Integer, n::Integer, k, Zsnorm)
             data2 = (; x, γ, A, U, S, V, info)
         end
     end
-    norm(data1.A * data1.V[:, end]) < 1e-2 || @warn "Large residual for data1" data1
-    norm(data2.A * data2.V[:, end]) < 1e-2 || @warn "Large residual for data2" data2
+    #=
+    if real(k) > kco # Warn if above cutoff
+        norm(data1.A * data1.V[:, end]) < 0.1 || @warn "Large residual for data1" data1
+        norm(data2.A * data2.V[:, end]) < 0.1 || @warn "Large residual for data2" data2
+    end
+    =#
     γtm, γte = real(data1.γ) < real(data2.γ) ? (data1.γ, data2.γ) : (data2.γ, data1.γ)
     return (; γte, γtm)
 end
 
-#penalty_fun(x, x0 = 0.9, ϵ = 0.01) = log1p(exp((x - x0) / ϵ)) * ϵ
-function penalty_fun(x; a = 100, n = 2, x0 = 0.9, ϵ = 0.01)
-    xⁿ = x^n
-    if xⁿ > 5
-        result = a * (xⁿ - x0)
-    else
-        result = a * log1p(exp((xⁿ - x0) / ϵ)) * ϵ
-    end
-    return result
-end
 
 """
     collinmatrix(γ, parameters)
@@ -486,15 +496,9 @@ function collin_gamma_objective(Δγari, parameters)
     Δγa = complex(Δγari[1], Δγari[2])
     γ = im * β + Δγa / a
     A = collinmatrix(γ, parameters)
-    Anorm = A / norm(A)
-    determ = det(Anorm)
-    temag = abs(Anorm[1, 2])
-    tmmag = abs(Anorm[1, 1])
-    #penalty = penalty_fun(ratio)
-    penalty = 0.0
-    detobjective = abs2(determ) / norm(A)
-    objective = detobjective + penalty
-    return (; objective, Δγa, γ, A, penalty)
+    determ = det(A)
+    objective = abs(determ)
+    return (; objective, Δγa, γ, A)
 end
 
 """
@@ -639,8 +643,8 @@ function rwgte10gz(
 end
 
 """
-    rwggz(p, m, n, a, b, f; ϵᵣ=1.0, tanδ=0.0, σ=Inf, Rq=0.0) -> (γ, Z)
-    rwggz(p, m, n, a, b, f; epsr=1.0, tandel=0.0, sigma=Inf, Rq=0.0) -> (γ, Z)
+    rwggz_yeap(p, m, n, a, b, f; ϵᵣ=1.0, tanδ=0.0, σ=Inf, Rq=0.0) -> (γ, Z)
+    rwggz_yeap(p, m, n, a, b, f; epsr=1.0, tandel=0.0, sigma=Inf, Rq=0.0) -> (γ, Z)
 
 Accurately compute γ and Z (prop. constant and wave impedance) of a mode in rectangular guide with rough walls.
 
@@ -665,7 +669,7 @@ The tuple `(γ, Z)` where:
 - [1] Yeap, Kim Ho et al., "Attenuation in circular and rectangular waveguides." 
   Electromagnetics 37, no. 3 (2017): 171-184.
 """
-function rwggz(
+function rwggz_yeap(
         p::TETM,
         m::Int,
         n::Int,
@@ -735,9 +739,6 @@ Function defining a NonLinearProblem whose solution provides rigorously correct 
 ## Return Value
 - `residual`: A static 4-vector containing the real and imaginary parts of the two expressions that must be zeroed for a valid 
   solution.
-
-## Reference: 
-
 """
 function nlsolvedkxadkyb(Δs::AbstractVector, params)
     Δkxa = complex(Δs[1], Δs[2])
@@ -780,10 +781,9 @@ kx and ky values of a rectangular waveguide.
   solution.
 
 ## Reference: 
-[1] Yeap, Kim Ho, et al. "Attenuation in circular and rectangular waveguides." **Electromagnetics**
-37.3 (2017): 171-184.  See Eqs. (6a) and (6b).
-[2] P. Simon, "Notes on Attenuation in Circular and Rectangular Waveguides", Eqs (7a) and (7b).
-
+- [1] Yeap, Kim Ho, et al. "Attenuation in circular and rectangular waveguides." **Electromagnetics**
+  37.3 (2017): 171-184.  See Eqs. (6a) and (6b).
+- [2] P. Simon, "Notes on Attenuation in Circular and Rectangular Waveguides", Eqs (7a) and (7b).
 """
 function nlsolvekxakyb(rikakbs::AbstractVector, params)
     kxa = complex(rikakbs[1], rikakbs[2])
@@ -980,7 +980,8 @@ Note: This function is intended for programmatic use.  For interactive use, see 
   units as `a` and `b` (but without attached units), and `α` is the mode attenuation constant in units 
   of dB/unitlength (without attached units), where unitlength is one unit of length in the same units 
   as `a` and `b`. The modes are listed in order of increasing cutoff frequency. For cutoff modes (other
-  than TE10 or TE01 which are calculated more accurately) the value of `λg` will be `Inf`.
+  than TEₘ₀ or TE₀ₙ which are calculated more accurately when wall losses are present) the value of 
+  `λg` will be `Inf`.
 """
 function rwg_modes(
         a::Unitful.Quantity{<:Real, Unitful.dimension(u"m")},
@@ -1150,16 +1151,17 @@ function lookup_rwg(wgspec::AbstractString)
 end
 
 """
-    rwg_modetable(wgspec, frequency; kwargs...)
+    rwg_modetable(wgspec; f, kwargs...) -> mdt
 
-Pretty-print a table of rectangular waveguide mode properties: cutoff frequency, guide wavelength, and attenuation constant.
+Create a table of rectangular waveguide mode properties: cutoff frequency, guide wavelength, and attenuation constant.
 
 Guide wavelength and attenuation for the TE₁₀ and TE₀₁ modes are accurately computed at frequencies below, at, or 
 above cutoff, for both smooth and rough imperfectly conducting surfaces, using the Gradient method as detailed 
 in the paper: "Analytical waveguide model precisely predicting loss and delay including surface roughness," 
 **IEEE Trans. Microwave Theory Tech.**, vol. 66, no. 6 (2018): pp. 2649-2662. For other modes the standard 
 perturbational formulas are used in conjunction with the Gradient method to determine effective surface impedance.  
-For cutoff modes (other than TE₁₀ and TE₀₁) the value of guide wavelength will be printed out as `Inf`.
+For cutoff modes (other than TEₘ₀ and TE₀ₙ which are calculated more accurately when wall losses are present), the
+value of guide wavelength will be printed out as `Inf`.
 
 Note: This function is intended for interactive use.  For programmatic use, see `rwg_modes`.  
 The table is printed to the user's console using the `PrettyTables` package.  
@@ -1167,7 +1169,9 @@ The table is printed to the user's console using the `PrettyTables` package.
 ## Required Positional Arguments
 - `wgspec::AbstractString`: A standard (EIA, RCSC, or IEC) abbreviation for a rectangular waveguide size.
   Examples include `"WR650"` (EIA), `"WG7"` (RCSC), and `"R22"` (IEC).
-- `frequency`: The frequency expressed as a `Unitful` quantity with dimensions of inverse time.  Examples: `2.35u"GHz"`,
+
+## Required Keyword Arguments
+- `f`: The frequency expressed as a `Unitful` quantity with dimensions of inverse time.  Examples: `2.35u"GHz"`,
   `2350u"MHz"`, `2.35e9u"Hz"`, etc.
 
 ## Optional Keyword Arguments
@@ -1180,30 +1184,33 @@ The table is printed to the user's console using the `PrettyTables` package.
   with dimensions the same as those of `u"S/m"`.  Default value is `Inf*u"S/m"`.
 - `Rq`: The RMS surface roughness of the waveguide walls expressed as a `Unitful` quantity having dimension
   of length. Default value is `0.0u"m"`.
-- `col_fmts::String = ["%s", "%i", "%i", "%#.8g", "%8.4f", "%8.4f"]`: A vector of C-style format strings
+- `colfmts::String = ["%s", "%i", "%i", "%#.8g", "%8.4f", "%8.4f"]`: A vector of C-style format strings
   used to format the six columns of the table.
+
+## Return Value
+- `mdt`: A `ModeDataTable` instance which will pretty-print automatically in the user's REPL or notebook environment.
 """
-function rwg_modetable(
-        wgspec::AbstractString,
-        f::Unitful.Quantity{<:Real, Unitful.dimension(u"Hz")};
-        length_unit::Unitful.FreeUnits{Tl, Unitful.dimension(u"m")} = u"inch",
+function rwg_modetable(wgspec::AbstractString;
+        f::Unitful.Quantity{<:Real, Unitful.dimension(u"Hz")},
+        length_unit::Unitful.FreeUnits{Tl, Unitful.dimension(u"m")} = Unitful.unit(lookup_rwg(wgspec)[1]),
         kwargs...) where {Tl}
     (a, b) = lookup_rwg(wgspec)
-    return rwg_modetable(length_unit(a), length_unit(b), f; wgname = wgspec, kwargs...)
+    return rwg_modetable(; a = length_unit(a), b = length_unit(b), f, wgname = wgspec, kwargs...)
 end
 
 """
-    rwg_modetable(a, b, frequency; kwargs...)
+    rwg_modetable(; a, b, frequency, kwargs...)
 
 An alternative method for `rwg_modetable` allowing explicit specification of the waveguide dimensions.
-Here, instead of `wgspec`, the first two arguments are the x and y dimensions of the waveguide, expressed
-as `Unitful` quantities having dimension of length.  Both must be expressed in the same units, e.g. `u"mm"`
-or `u"inch"`.  The default value of `length_unit` for this method is whatever length unit `a` and `b` use.
+Here, instead of `wgspec`, the required keyword arguments include `a` and `b`, the x and y dimensions 
+of the waveguide, respectively, expressed as `Unitful` quantities having dimension of length.  Both 
+must be expressed in the same units, e.g. `u"mm"` or `u"inch"`.  The default value of `length_unit` 
+for this method is whatever length unit `a` and `b` use.
 """
-function rwg_modetable(
+function rwg_modetable(;
         a::Unitful.Quantity{<:Real, Unitful.dimension(u"m")},
         b::Unitful.Quantity{<:Real, Unitful.dimension(u"m")},
-        f::Unitful.Quantity{<:Real, Unitful.dimension(u"Hz")};
+        f::Unitful.Quantity{<:Real, Unitful.dimension(u"Hz")},
         nmodes::Int = 10,
         ϵᵣ::Real = 1.0,
         epsr::Real = 1.0,
@@ -1212,13 +1219,13 @@ function rwg_modetable(
         σ::Unitful.Quantity{<:Real, Unitful.dimension(u"S/m")} = Inf * u"S/m",
         sigma::Unitful.Quantity{<:Real, Unitful.dimension(u"S/m")} = Inf * u"S/m",
         Rq::Unitful.Quantity{<:Real, Unitful.dimension(u"m")} = 0.0u"m",
-        col_fmts = ["%s", "%i", "%i", "%#.8g", "%8.4f", "%8.4f"],
+        colfmts = ["%s", "%i", "%i", "%#.8g", "%8.4f", "%8.4f"],
+        length_unit = Unitful.unit(a),
         wgname::AbstractString = "RWG")
     ϵᵣ = max(ϵᵣ, epsr)
     tanδ = max(tanδ, tandel)
     σ = min(σ, sigma)
 
-    length_unit = Unitful.unit(a)
     freq_unit = Unitful.unit(f)
 
     modedata = rwg_modes(a, b, f; nmodes, ϵᵣ, tanδ, σ, Rq)
@@ -1228,49 +1235,8 @@ function rwg_modetable(
     !iszero(Rq) && (title *= ", Rq = $Rq")
     !isone(ϵᵣ) && (title *= ", ϵᵣ = $ϵᵣ")
     !iszero(tanδ) && (title *= ", tanδ = $tanδ")
-    maxtitlelen = 60
-    linebreak = is_html_environment() ? "<br>\n" : "\n"
-    linelen = 0
-    title2 = ""
-    for phrase in eachsplit(title, ',')
-        if linelen + length(phrase) > maxtitlelen
-            title2 = string(title2, linebreak)
-            linelen = 0
-        end
-        linelen += length(phrase)
-        title2 *= string(phrase, ",")
-    end
-    title = title2[begin:(end - 1)]
-
-    column_labels = ["Type", "m", "n", "Cutoff Freq.", "Guide Wavelength", "Attenuation"]
-    column_units = ["", "", "", "[$freq_unit]", "[$length_unit]", "[dB/$length_unit]"]
-    header = (column_labels, column_units)
-
-    if is_html_environment()
-        p = pretty_table(
-            modedata;
-            backend = Val(:html),
-            title,
-            title_alignment = :c,
-            header,
-            formatters = ft_printf(col_fmts, 1:6),
-            tf = tf_html_default
-        )
-        #Main.IJulia.display("text/html", p)
-    else
-        println()
-        p = pretty_table(
-            modedata;
-            backend = Val(:text),
-            title,
-            title_alignment = :c,
-            title_same_width_as_table = true,
-            title_autowrap = true,
-            header,
-            formatters = ft_printf(col_fmts, 1:6),
-            tf = tf_unicode_rounded
-        )
-    end
-
-    return nothing
+    coltitles = ["Type", "m", "n", "Cutoff Freq.", "Guide Wavelength", "Attenuation"]
+    colunits = ["", "", "", "[$freq_unit]", "[$length_unit]", "[dB/$length_unit]"]
+    mdt = ModeDataTable(; title, modedata, coltitles, colunits, colfmts)
+    return mdt
 end
