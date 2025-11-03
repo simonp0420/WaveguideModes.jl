@@ -10,6 +10,7 @@ using PrettyTables: fmt__printf, HtmlTableFormat, MarkdownStyle, MarkdownTableFo
 using AbstractPlutoDingetjes: is_inside_pluto
 using StaticArrays: @SVector, @SMatrix
 using SimpleNonlinearSolve: SimpleNonlinearSolve as snls
+using NonlinearSolve: NonlinearSolve as nls
 using PRIMA: bobyqa
 using FunctionZeros: besselj_zero, besselj_deriv_zero
 using Crayons: @crayon_str
