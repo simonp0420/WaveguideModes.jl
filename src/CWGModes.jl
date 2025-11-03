@@ -343,7 +343,9 @@ function cwg_modes(
         σ::Unitful.Quantity{<:Real, Unitful.dimension(u"S/m")} = Inf * u"S/m",
         sigma::Unitful.Quantity{<:Real, Unitful.dimension(u"S/m")} = Inf * u"S/m",
         Rq::Unitful.Quantity{<:Real, Unitful.dimension(u"m")} = 0.0u"m",
-)
+        length_unit::Unitful.FreeUnits{Tl, Unitful.dimension(u"m")} = Unitful.unit(a),
+        freq_unit::Unitful.FreeUnits{Tf, Unitful.dimension(u"Hz")} = Unitful.unit(f),
+        ) where {Tl, Tf}
 
     ϵᵣ = max(ϵᵣ, epsr)
     tanδ = max(tanδ, tandel)
@@ -351,9 +353,7 @@ function cwg_modes(
 
     # Verify inputs
     a > 0u"m" || throw(ArgumentError("a must be positive"))
-    length_unit = Unitful.unit(a)
     f > 0u"Hz" || throw(ArgumentError("f must be positive"))
-    freq_unit = Unitful.unit(f)
     nmodes > 0 || throw(ArgumentError("nmodes must be positive"))
     all(≥(0), ms) || throw(ArgumentError("ms must all be nonnegative"))
     ϵᵣ ≥ 1 || throw(ArgumentError("ϵᵣ must be greater than or equal to 1"))
@@ -446,15 +446,16 @@ function cwg_modetable(;
         σ::Unitful.Quantity{<:Real, Unitful.dimension(u"S/m")} = Inf * u"S/m",
         sigma::Unitful.Quantity{<:Real, Unitful.dimension(u"S/m")} = Inf * u"S/m",
         Rq::Unitful.Quantity{<:Real, Unitful.dimension(u"m")} = 0.0u"m",
+        length_unit::Unitful.FreeUnits{Tl, Unitful.dimension(u"m")} = Unitful.unit(a),
+        freq_unit::Unitful.FreeUnits{Tf, Unitful.dimension(u"Hz")} = Unitful.unit(f),
         colfmts = ["%s", "%i", "%i", "%#.8g", "%8.4f", "%8.4f"],
-        length_unit = Unitful.unit(a))
+        ) where {Tl, Tf}
 
-    freq_unit = Unitful.unit(f)
     ϵᵣ = max(ϵᵣ, epsr)
     tanδ = max(tanδ, tandel)
     σ = min(σ, sigma)
 
-    modedata = cwg_modes(a, f; ms, nmodes, ϵᵣ, tanδ, σ, Rq)
+    modedata = cwg_modes(a, f; ms, nmodes, ϵᵣ, tanδ, σ, Rq, length_unit, freq_unit)
 
     mdis = ms isa Integer ? [ms] : ms
     title = "CWG: m ∈ $mdis, a = $a, f = $f"

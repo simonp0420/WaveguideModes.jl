@@ -841,19 +841,20 @@ function e0h0mat(kxa, kyb, params)
     hxz = kx * kz / kρ²
     hy0 = ky * k / kρ²
 
-    mat = zeros(ComplexF64, 4, 2)
-    mat[1, 1] = -im * ηwn * hx0 * cux + sux
-    mat[2, 1] = im * hyz * sux
-    mat[3, 1] = im * ηwn * hy0 * cuy - suy
-    mat[4, 1] = im * hxz * suy
+    #mat = zeros(typeof(kxa), 4, 2)
+    mat11 = -im * ηwn * hx0 * cux + sux
+    mat21 = im * hyz * sux
+    mat31 = im * ηwn * hy0 * cuy - suy
+    mat41 = im * hxz * suy
 
-    mat[1, 2] = im * ηwn * hyz * cux
-    mat[2, 2] = im * hx0 * sux + ηwn * cux
-    mat[3, 2] = im * ηwn * hxz * cuy
-    mat[4, 2] = -im * hy0 * suy - ηwn * cuy
-
+    mat12 = im * ηwn * hyz * cux
+    mat22 = im * hx0 * sux + ηwn * cux
+    mat32 = im * ηwn * hxz * cuy
+    mat42 = -im * hy0 * suy - ηwn * cuy
+    mat = @SMatrix [mat11 mat12; mat21 mat22; mat31 mat32; mat41 mat42]
     return mat
 end
+
 
 """
     compute_As_kxakybs(FGHz, rwg, mode_params; iterate=false)
@@ -994,23 +995,24 @@ function rwg_modes(
         tandel::Real = 0.0,
         σ::Unitful.Quantity{<:Real, Unitful.dimension(u"S/m")} = Inf * u"S/m",
         sigma::Unitful.Quantity{<:Real, Unitful.dimension(u"S/m")} = Inf * u"S/m",
-        Rq::Unitful.Quantity{<:Real, Unitful.dimension(u"m")} = 0.0u"m")
+        Rq::Unitful.Quantity{<:Real, Unitful.dimension(u"m")} = 0.0u"m",
+        length_unit::Unitful.FreeUnits{Tl, Unitful.dimension(u"m")} = Unitful.unit(a),
+        freq_unit::Unitful.FreeUnits{Tf, Unitful.dimension(u"Hz")} = Unitful.unit(f),
+        ) where {Tl, Tf}
     ϵᵣ = max(ϵᵣ, epsr)
     tanδ = max(tanδ, tandel)
     σ = min(σ, sigma)
 
     # Verify inputs
     (a > 0u"m" && b > 0u"m") || throw(ArgumentError("a and b must be positive"))
-    length_unit = Unitful.unit(a)
-    length_unit == Unitful.unit(b) ||
+    Unitful.unit(a) == Unitful.unit(b) ||
         throw(ArgumentError("a and b must have the same units"))
 
     f > 0u"Hz" || throw(ArgumentError("f must be positive"))
-    freq_unit = Unitful.unit(f)
     nmodes > 0 || throw(ArgumentError("nmodes must be positive"))
     ϵᵣ ≥ 1 || throw(ArgumentError("ϵᵣ must be greater than or equal to 1"))
     tanδ ≥ 0 || throw(ArgumentError("tanδ must be nonnegative"))
-    σ > 0u"S/m" || throw(ArgumentError("σ must be posiive"))
+    σ > 0u"S/m" || throw(ArgumentError("σ must be positive"))
     Rq ≥ 0u"m" || throw(ArgumentError("Rq must be nonnegative"))
 
     # Convert to Float64 in standard MKS units and remove units. 
@@ -1219,16 +1221,17 @@ function rwg_modetable(;
         σ::Unitful.Quantity{<:Real, Unitful.dimension(u"S/m")} = Inf * u"S/m",
         sigma::Unitful.Quantity{<:Real, Unitful.dimension(u"S/m")} = Inf * u"S/m",
         Rq::Unitful.Quantity{<:Real, Unitful.dimension(u"m")} = 0.0u"m",
+        length_unit::Unitful.Units{Tl, Unitful.dimension(u"m")} = Unitful.unit(a),
+        freq_unit::Unitful.Units{Tf, Unitful.dimension(u"Hz")} = Unitful.unit(f),
         colfmts = ["%s", "%i", "%i", "%#.8g", "%8.4f", "%8.4f"],
-        length_unit = Unitful.unit(a),
-        wgname::AbstractString = "RWG")
+        wgname::AbstractString = "RWG"
+        ) where {Tf, Tl}
+
     ϵᵣ = max(ϵᵣ, epsr)
     tanδ = max(tanδ, tandel)
     σ = min(σ, sigma)
 
-    freq_unit = Unitful.unit(f)
-
-    modedata = rwg_modes(a, b, f; nmodes, ϵᵣ, tanδ, σ, Rq)
+    modedata = rwg_modes(a, b, f; nmodes, ϵᵣ, tanδ, σ, Rq, length_unit, freq_unit)
 
     title = wgname * ": a = $a, b = $b, f = $f"
     !isinf(σ) && (title *= ", σ = $σ")
