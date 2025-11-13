@@ -1,6 +1,6 @@
 module WaveguideModes
 
-using LinearAlgebra: det, norm, svd
+using LinearAlgebra: det, norm, svd, eigen, Hermitian
 using Unitful: Unitful, @u_str
 using MetalSurfaceImpedance: Zsurface, effective_conductivity
 using Printf: @printf
@@ -8,7 +8,7 @@ using Accessors: @set, @reset
 using PrettyTables: fmt__printf, HtmlTableFormat, MarkdownStyle, MarkdownTableFormat, 
                     HtmlTableStyle, pretty_table, TextHighlighter, TextTableStyle
 using AbstractPlutoDingetjes: is_inside_pluto
-using StaticArrays: @SVector, @SMatrix
+using StaticArrays: @SVector, @SMatrix, SVector
 using SimpleNonlinearSolve: SimpleNonlinearSolve as snls
 using NonlinearSolve: NonlinearSolve as nls
 using PRIMA: bobyqa
