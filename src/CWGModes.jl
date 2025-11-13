@@ -249,7 +249,7 @@ function cwgkza_abe(p::TETM, m::Integer, umn::Float64, ka::ComplexF64, Zsn::Comp
         end
         γa = mysqrt((umn + Δu)^2 - ka^2)
     end
-    kza = -im * γza
+    kza = -im * γa
     return kza
 end
 
