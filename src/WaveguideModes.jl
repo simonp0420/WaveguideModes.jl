@@ -18,7 +18,7 @@ using Crayons: @crayon_str
 export @u_str
 export TE, TM, setup_modes!,
        RWG, RWGMode, lookup_rwg, rwgte10gz, rwg_modes, rwg_modetable,
-       CWG, CWGMode, cwg_modes, cwg_modetable
+       CWG, CWGMode, cwg_modes, cwg_modetable, cwgkcoa
 
 using PhysicalConstants: PhysicalConstants
 const c₀ = Unitful.ustrip(Float64, u"m/s", PhysicalConstants.CODATA2022.c_0)
@@ -110,10 +110,11 @@ end
 
 function Base.show(io::IO, ::MIME"text/plain", mdt::ModeDataTable)
     (;  title, modedata, coltitles, colunits, colfmts) = mdt
-    maxtitlelen = 60
+    maxtitlelen = 62
     title2 = String[]
     nexttline = ""
     for phrase in eachsplit(title, ',')
+        phrase = replace(phrase, " m^-1" => "/m")
         if length(nexttline) + length(phrase) > maxtitlelen
             push!(title2, nexttline)
             nexttline = ""
@@ -122,7 +123,12 @@ function Base.show(io::IO, ::MIME"text/plain", mdt::ModeDataTable)
     end
     push!(title2, nexttline)
     title = first(title2)
-    subtitle = length(title2) > 1 ? join(title2[begin+1:end])[begin+1:end-1] : ""
+    if length(title2) > 1
+        subtitle = join(title2[begin+1:end])[begin+1:end-1]
+    else
+        subtitle = ""
+        title = title[firstindex(title):prevind(title, lastindex(title))] # Remove trailing comma
+    end
     column_labels = [coltitles, colunits]
     formatters = [fmt__printf(colfmts[i], [i]) for i in 1:6]
     println(io)
